@@ -19,6 +19,44 @@ def test_search_filters_by_company_status_tag_and_text(crm):
     assert crm.search_contacts(query="northstar") == [avery]
 
 
+def test_search_companies_filters_by_company_text(crm):
+    northstar = crm.add_company("Northstar Analytics", "Analytics", "https://northstar.example")
+    harbor = crm.add_company("Harbor Clinic", "Healthcare", "https://harbor.example")
+
+    assert crm.search_companies("analytics") == [northstar]
+    assert crm.search_companies("healthcare") == [harbor]
+    assert crm.search_companies("example") == [harbor, northstar]
+
+
+def test_paged_company_search_uses_requested_window(crm):
+    for name in ["Atlas Legal", "Circuit Supply", "Harbor Clinic", "Meadow Foods", "Northstar Analytics"]:
+        crm.add_company(name)
+
+    first_page = crm.search_companies_page(page=1, page_size=2)
+    second_page = crm.search_companies_page(page=2, page_size=2)
+
+    assert first_page.total == 5
+    assert first_page.page_count == 3
+    assert len(first_page.items) == 2
+    assert len(second_page.items) == 2
+    assert set(first_page.items).isdisjoint(second_page.items)
+
+
+def test_paged_contact_search_returns_metadata(crm):
+    for index in range(12):
+        crm.add_contact(f"Contact {index:02d}", status="lead")
+
+    page = crm.search_contacts_page(page=2, page_size=5)
+
+    assert page.total == 12
+    assert page.page == 2
+    assert page.page_size == 5
+    assert page.page_count == 3
+    assert len(page.items) == 5
+    assert page.has_previous
+    assert page.has_next
+
+
 def test_task_state_filters_and_archived_default(crm):
     active = crm.add_contact("Sam Chen", status="lead", tags="lead")
     archived = crm.add_contact("Lena Ortiz", status="inactive", tags="finance")
@@ -89,3 +127,13 @@ def test_update_contact_basics_moves_company_filter(crm):
     assert crm.search_contacts(company=harbor) == [contact]
     assert contact.email == "avery@harbor.example"
     assert contact.title == "Advisor"
+
+
+def test_remove_contact_tag_updates_contact_and_tag_filter(crm):
+    contact = crm.add_contact("Avery Stone", tags="lead, technical")
+
+    crm.remove_contact_tag(contact, "technical")
+
+    assert contact.tags == {"lead"}
+    assert crm.search_contacts(tag="technical") == []
+    assert crm.search_contacts(tag="lead") == [contact]

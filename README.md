@@ -49,7 +49,6 @@ dbzero singleton root, and all durable app state is reachable from it:
 - contacts
 - lookup dictionaries
 - date/datetime indexes
-- checkpoints
 
 The app opens dbzero in `app.py` with:
 
@@ -58,8 +57,12 @@ db0.init(".dbzero", prefix="/dbzero/simple-crm/dev/data", autocommit=True)
 crm = CRM()
 ```
 
-Local durable app data lives under `.dbzero/`. To reset local app state, stop
-the app and remove that directory:
+With `autocommit=True`, normal CRM updates persist automatically as they happen.
+There is no save or checkpoint button: adding contacts, notes, tasks, tags, and
+status changes writes through to the local dbzero store.
+
+Local durable app data lives under `.dbzero/`. Restarting the app reopens that
+state. To reset local app state, stop the app and remove that directory:
 
 ```bash
 rm -rf .dbzero
@@ -75,7 +78,6 @@ Tests use temporary dbzero roots, so they do not read or modify local app data.
 - Add notes and follow-up tasks.
 - Complete and reopen tasks.
 - Archive contacts.
-- Create lightweight count checkpoints.
 
 ## Seed Data
 
@@ -94,7 +96,7 @@ reuses existing records instead of duplicating the demo CRM.
 | ORM models and query builders | dbzero-backed Python objects, references, dict lookups, and indexes |
 | Database server | Embedded `.dbzero/` state |
 | Manual cache layer | dbzero caching behavior |
-| Separate audit subsystem | Lightweight checkpoint preview |
+| Separate audit subsystem | Not included in the main tutorial workflow |
 
 This is not the right stack for every app. Separate frontends, explicit APIs,
 relational databases, queues, and deployment automation are still appropriate

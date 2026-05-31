@@ -16,9 +16,10 @@ def test_follow_up_loop_updates_contact_and_metrics(crm):
 
     note = crm.add_note(contact, "Discussed current reporting workflow.")
     due_date = date.today() + timedelta(days=2)
-    task = crm.add_task(contact, "Send pricing follow-up", due_date)
+    task = crm.add_task(contact, "Send pricing follow-up", due_date, "Share pricing options and timeline.")
 
     assert contact.last_touch_at == note.created_at
+    assert task.description == "Share pricing options and timeline."
     assert contact.next_task_due_at == due_date
     assert contact.open_task_count == 1
     assert crm.counts()["open_tasks"] == 1
@@ -53,6 +54,19 @@ def test_overdue_and_reopen_task_filters(crm):
     assert contact in crm.search_contacts(task_filter=TASK_FILTER_OVERDUE)
 
 
+def test_task_rows_return_open_tasks_with_contacts_in_due_order(crm):
+    today = date(2026, 5, 31)
+    avery = crm.add_contact("Avery Stone", status="lead")
+    grace = crm.add_contact("Grace Kim", status="prospect")
+    later = crm.add_task(avery, "Send recap", today + timedelta(days=3))
+    overdue = crm.add_task(grace, "Schedule technical review", today - timedelta(days=1))
+    completed = crm.add_task(avery, "Already handled", today - timedelta(days=2))
+    crm.complete_task(avery, completed)
+
+    assert crm.task_rows(today=today) == [(grace, overdue), (avery, later)]
+    assert crm.task_rows(TASK_FILTER_OVERDUE, today=today) == [(grace, overdue)]
+
+
 def test_checkpoint_records_current_counts(crm):
     crm.add_company("Atlas Legal", "Legal services", "https://atlas.example")
     contact = crm.add_contact("Theo Martin", status="partner")
@@ -65,4 +79,3 @@ def test_checkpoint_records_current_counts(crm):
     assert checkpoint.counts["companies"] == 1
     assert checkpoint.counts["contacts"] == 1
     assert checkpoint.counts["completed_tasks"] == 1
-

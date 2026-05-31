@@ -24,6 +24,30 @@ TASK_FILTER_OPEN = "open"
 TASK_FILTER_OVERDUE = "overdue"
 
 
+@dataclass(frozen=True)
+class PageResult:
+    """A small page of domain objects plus enough metadata for UI controls."""
+
+    items: list
+    total: int
+    page: int
+    page_size: int
+
+    @property
+    def page_count(self) -> int:
+        if self.total == 0:
+            return 1
+        return ((self.total - 1) // self.page_size) + 1
+
+    @property
+    def has_previous(self) -> bool:
+        return self.page > 1
+
+    @property
+    def has_next(self) -> bool:
+        return self.page < self.page_count
+
+
 def _now() -> datetime:
     return datetime.now()
 
@@ -78,9 +102,14 @@ class Task:
 
     title: str
     due_date: date | None = None
+    description: str = ""
     completed: bool = False
     created_at: datetime = field(default_factory=_now)
     completed_at: datetime | None = None
+
+    def is_overdue(self, today: date | None = None) -> bool:
+        today = today or date.today()
+        return not self.completed and self.due_date is not None and self.due_date < today
 
     def complete(self) -> None:
         if not self.completed:
@@ -137,12 +166,7 @@ class Contact:
         return [task for task in self.tasks if not task.completed]
 
     def overdue_tasks(self, today: date | None = None) -> list[Task]:
-        today = today or date.today()
-        return [
-            task
-            for task in self.open_tasks()
-            if task.due_date is not None and task.due_date < today
-        ]
+        return [task for task in self.open_tasks() if task.is_overdue(today)]
 
     def update_basics(
         self,
@@ -171,11 +195,11 @@ class Contact:
         self.updated_at = _now()
         return note
 
-    def add_task(self, title: str, due_date: date | None = None) -> Task:
+    def add_task(self, title: str, due_date: date | None = None, description: str = "") -> Task:
         clean_title = title.strip()
         if not clean_title:
             raise ValueError("Task title is required.")
-        task = Task(clean_title, due_date)
+        task = Task(clean_title, due_date, description.strip())
         self.tasks.append(task)
         self.updated_at = _now()
         return task
@@ -192,14 +216,14 @@ class Contact:
 
     def add_tag(self, tag: str) -> None:
         normalized = tag.strip().lower()
-        if normalized:
-            self.tags.add(normalized)
+        if normalized and normalized not in self.tags:
+            self.tags = {*list(self.tags), normalized}
             self.updated_at = _now()
 
     def remove_tag(self, tag: str) -> None:
         normalized = tag.strip().lower()
         if normalized in self.tags:
-            self.tags.remove(normalized)
+            self.tags = {current for current in list(self.tags) if current != normalized}
             self.updated_at = _now()
 
     def archive(self) -> None:
@@ -306,23 +330,25 @@ class CRM:
         self.change_contact_status(contact, "archived")
 
     def add_contact_tag(self, contact: Contact, tag: str) -> None:
-        before = set(contact.tags)
+        before = set(list(contact.tags))
         contact.add_tag(tag)
-        for added in contact.tags - before:
+        after = set(list(contact.tags))
+        for added in after - before:
             self._dict_list_add(self.contacts_by_tag, added, contact)
 
     def remove_contact_tag(self, contact: Contact, tag: str) -> None:
-        before = set(contact.tags)
+        before = set(list(contact.tags))
         contact.remove_tag(tag)
-        for removed in before - contact.tags:
+        after = set(list(contact.tags))
+        for removed in before - after:
             self._dict_list_remove(self.contacts_by_tag, removed, contact)
 
     def add_note(self, contact: Contact, body: str) -> Note:
         return contact.add_note(body)
 
-    def add_task(self, contact: Contact, title: str, due_date: date | None = None) -> Task:
+    def add_task(self, contact: Contact, title: str, due_date: date | None = None, description: str = "") -> Task:
         old_next_due = contact.next_task_due_at
-        task = contact.add_task(title, due_date)
+        task = contact.add_task(title, due_date, description)
         self._reindex_next_task_date(contact, old_next_due)
         return task
 
@@ -339,11 +365,41 @@ class CRM:
     def companies(self) -> list[Company]:
         return sorted(db0.find(Company), key=lambda company: company.name.lower())
 
+    def search_companies(self, query: str = "") -> list[Company]:
+        normalized_query = query.strip().lower()
+        companies = self.companies()
+        if not normalized_query:
+            return companies
+        return [
+            company
+            for company in companies
+            if self._company_matches_text(company, normalized_query)
+        ]
+
+    def search_companies_page(self, query: str = "", page: int = 1, page_size: int = 10) -> PageResult:
+        page, page_size, start, stop = self._page_bounds(page, page_size)
+        if query.strip():
+            return self._paginate_list(self.search_companies(query), page, page_size)
+        total = len(self.companies())
+        return PageResult(list(db0.find(Company)[start:stop]), total, page, page_size)
+
     def contacts(self, include_archived: bool = False) -> list[Contact]:
         contacts = list(db0.find(Contact))
         if not include_archived:
             contacts = [contact for contact in contacts if not contact.archived and contact.status != "archived"]
         return sorted(contacts, key=lambda contact: contact.updated_at, reverse=True)
+
+    def contacts_page(
+        self,
+        page: int = 1,
+        page_size: int = 10,
+        include_archived: bool = False,
+    ) -> PageResult:
+        page, page_size, start, stop = self._page_bounds(page, page_size)
+        if include_archived:
+            total = len(self.contacts(include_archived=True))
+            return PageResult(list(db0.find(Contact)[start:stop]), total, page, page_size)
+        return self._paginate_list(self.contacts(), page, page_size)
 
     def find_company_by_name(self, name: str) -> Company | None:
         return self.companies_by_name.get(self._company_key(name))
@@ -366,6 +422,36 @@ class CRM:
         for contact in self.contacts():
             tasks.extend(contact.overdue_tasks(today))
         return tasks
+
+    def task_rows(
+        self,
+        task_filter: str = TASK_FILTER_OPEN,
+        today: date | None = None,
+    ) -> list[tuple[Contact, Task]]:
+        if task_filter not in {TASK_FILTER_OPEN, TASK_FILTER_OVERDUE}:
+            raise ValueError(f"Unknown task filter: {task_filter!r}")
+        today = today or date.today()
+        rows: list[tuple[Contact, Task]] = []
+        for contact in self.contacts():
+            for task in contact.tasks:
+                if task.completed:
+                    continue
+                if task_filter == TASK_FILTER_OVERDUE and not task.is_overdue(today):
+                    continue
+                rows.append((contact, task))
+        return sorted(
+            rows,
+            key=lambda row: (row[1].due_date or date.max, row[0].name.lower(), row[1].created_at),
+        )
+
+    def task_rows_page(
+        self,
+        task_filter: str = TASK_FILTER_OPEN,
+        today: date | None = None,
+        page: int = 1,
+        page_size: int = 10,
+    ) -> PageResult:
+        return self._paginate_list(self.task_rows(task_filter, today), page, page_size)
 
     def counts(self, today: date | None = None) -> dict[str, int]:
         contacts = self.contacts()
@@ -416,6 +502,32 @@ class CRM:
             result.append(contact)
         return sorted(result, key=lambda contact: contact.updated_at, reverse=True)
 
+    def search_contacts_page(
+        self,
+        query: str = "",
+        company: Company | None = None,
+        status: str | None = None,
+        tag: str | None = None,
+        task_filter: str = TASK_FILTER_ALL,
+        include_archived: bool = False,
+        today: date | None = None,
+        page: int = 1,
+        page_size: int = 10,
+    ) -> PageResult:
+        if (
+            not query.strip()
+            and company is None
+            and status is None
+            and tag is None
+            and task_filter == TASK_FILTER_ALL
+        ):
+            return self.contacts_page(page, page_size, include_archived)
+        return self._paginate_list(
+            self.search_contacts(query, company, status, tag, task_filter, include_archived, today),
+            page,
+            page_size,
+        )
+
     def _indexed_candidates(
         self,
         company: Company | None,
@@ -463,6 +575,21 @@ class CRM:
             " ".join(note.body for note in contact.notes),
         ]
         return any(query in field.lower() for field in fields)
+
+    def _company_matches_text(self, company: Company, query: str) -> bool:
+        fields = [company.name, company.industry, company.website]
+        return any(query in field.lower() for field in fields)
+
+    def _paginate_list(self, items: list, page: int, page_size: int) -> PageResult:
+        page, page_size, start, stop = self._page_bounds(page, page_size)
+        return PageResult(items[start:stop], len(items), page, page_size)
+
+    def _page_bounds(self, page: int, page_size: int) -> tuple[int, int, int, int]:
+        page = max(1, int(page))
+        page_size = max(1, int(page_size))
+        start = (page - 1) * page_size
+        stop = start + page_size
+        return page, page_size, start, stop
 
     def _company_index_key(self, company: Company) -> str:
         return self._company_key(company.name)

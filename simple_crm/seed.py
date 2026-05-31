@@ -62,24 +62,26 @@ def seed_sample_data(crm: CRM, today: date | None = None) -> dict[str, int]:
         contacts.append(contact)
 
     task_specs = [
-        (0, "Send pricing follow-up", today - timedelta(days=2), False),
-        (1, "Schedule technical review", today + timedelta(days=4), False),
-        (2, "Confirm renewal date", today + timedelta(days=8), False),
-        (3, "Share implementation notes", today - timedelta(days=6), True),
-        (4, "Check contract status", today - timedelta(days=1), False),
-        (5, "Send recap from discovery call", today + timedelta(days=2), True),
-        (6, "Follow up after trial period", today + timedelta(days=10), False),
-        (9, "Schedule technical review", today - timedelta(days=3), False),
-        (10, "Send pricing follow-up", today + timedelta(days=1), False),
+        (0, "Send pricing follow-up", "Send pricing options and ask which plan fits their rollout timeline.", today - timedelta(days=2), False),
+        (1, "Schedule technical review", "Find a time for their data lead to review integration requirements.", today + timedelta(days=4), False),
+        (2, "Confirm renewal date", "Confirm the renewal date and who needs to approve the next term.", today + timedelta(days=8), False),
+        (3, "Share implementation notes", "Send the implementation summary from the clinic workflow discussion.", today - timedelta(days=6), True),
+        (4, "Check contract status", "Ask whether finance has reviewed the draft contract.", today - timedelta(days=1), False),
+        (5, "Send recap from discovery call", "Send a short recap and next-step proposal from the discovery call.", today + timedelta(days=2), True),
+        (6, "Follow up after trial period", "Check how the trial went and whether they need help rolling it out.", today + timedelta(days=10), False),
+        (9, "Schedule technical review", "Book a technical review for access controls and reporting needs.", today - timedelta(days=3), False),
+        (10, "Send pricing follow-up", "Send a concise pricing note for the independent consultant package.", today + timedelta(days=1), False),
     ]
-    for contact_index, title, due_date, completed in task_specs:
+    for contact_index, title, description, due_date, completed in task_specs:
         contact = contacts[contact_index]
         existing_task = _find_task(contact, title)
         if existing_task is None:
-            task = crm.add_task(contact, title, due_date)
+            task = crm.add_task(contact, title, due_date, description)
             created_tasks += 1
         else:
             task = existing_task
+            if not getattr(task, "description", ""):
+                task.description = description
         if completed:
             crm.complete_task(contact, task)
 

@@ -100,23 +100,88 @@ def crm_page() -> None:
     crm = get_crm()
     state: dict[str, object] = {
         "selected_contact": None,
+        "selected_task": None,
         "query": "",
         "company": None,
         "status": None,
         "tag": None,
         "task_filter": TASK_FILTER_ALL,
+        "list_view": "contacts",
+        "task_list_filter": TASK_FILTER_OPEN,
+        "page": 1,
+        "page_size": 10,
     }
 
     ui.colors(primary="#2563eb", secondary="#0f766e", accent="#d97706", positive="#059669", negative="#dc2626")
     ui.add_head_html(
         """
         <style>
-        body { background: #f8fafc; }
+        body { background: #f6f7fb; color: #111827; }
         .crm-shell { min-height: 100vh; }
-        .crm-panel { background: white; border: 1px solid #e5e7eb; border-radius: 6px; }
-        .crm-row { border: 1px solid #e5e7eb; border-radius: 6px; background: white; }
+        .crm-layout {
+            display: grid;
+            grid-template-columns: minmax(260px, 300px) minmax(360px, 1fr) minmax(320px, 380px);
+            gap: 16px;
+            align-items: start;
+            width: 100%;
+        }
+        .crm-panel, .crm-row, .crm-empty {
+            background: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        }
+        .crm-row { transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease; }
+        .crm-row:hover { border-color: #bfdbfe; box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06); transform: translateY(-1px); }
         .crm-row-selected { border-color: #2563eb; box-shadow: 0 0 0 1px #2563eb inset; }
-        .crm-chip { border-radius: 999px; padding: 2px 8px; font-size: 12px; background: #eef2ff; color: #3730a3; }
+        .crm-chip {
+            border-radius: 999px;
+            padding: 2px 8px;
+            font-size: 12px;
+            line-height: 18px;
+            background: #eef2ff;
+            color: #3730a3;
+            max-width: 160px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .crm-chip-status { background: #eff6ff; color: #1d4ed8; font-weight: 600; }
+        .crm-chip-muted { background: #f1f5f9; color: #475569; }
+        .crm-chip-open { background: #fffbeb; color: #b45309; }
+        .crm-chip-overdue { background: #fef2f2; color: #b91c1c; }
+        .crm-chip-complete { background: #ecfdf5; color: #047857; }
+        .crm-metric {
+            min-width: 132px;
+            justify-content: flex-start;
+            text-align: left;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+        }
+        .crm-section-title {
+            color: #334155;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0;
+        }
+        .crm-note, .crm-task {
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+        @media (max-width: 1100px) {
+            .crm-layout { grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); }
+            .crm-detail { grid-column: 1 / -1; }
+        }
+        @media (max-width: 760px) {
+            .crm-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+            .crm-page-padding { padding: 12px; }
+            .crm-header-row { align-items: stretch; }
+            .crm-header-search { width: 100%; }
+            .crm-header-search .q-field { width: 100%; }
+            .crm-metric { min-width: calc(50% - 6px); flex: 1 1 calc(50% - 6px); }
+            .crm-row:hover { transform: none; }
+        }
         </style>
         """
     )
@@ -125,7 +190,15 @@ def crm_page() -> None:
         contact = state["selected_contact"]
         return contact if isinstance(contact, Contact) else None
 
+    def selected_task():
+        contact = selected_contact()
+        task = state["selected_task"]
+        if contact is not None and task in contact.tasks:
+            return task
+        return None
+
     def refresh_all() -> None:
+        refresh_header_search()
         refresh_metrics()
         refresh_filters()
         refresh_contact_form()
@@ -141,38 +214,115 @@ def crm_page() -> None:
             options[company.name] = company
         return options
 
+    def reset_page() -> None:
+        state["page"] = 1
+
+    def task_state(contact: Contact) -> tuple[str, str, str]:
+        overdue_count = len(contact.overdue_tasks())
+        if overdue_count:
+            return (f"{overdue_count} overdue", "crm-chip-overdue", "text-red-700")
+        if contact.open_task_count:
+            return (f"{contact.open_task_count} open", "crm-chip-open", "text-amber-700")
+        return ("No open tasks", "crm-chip-muted", "text-slate-500")
+
+    def task_status(task) -> tuple[str, str, str]:
+        if task.completed:
+            return ("Completed", "crm-chip-complete", "text-green-700")
+        if task.is_overdue():
+            return ("Overdue", "crm-chip-overdue", "text-red-700")
+        return ("Open", "crm-chip-open", "text-amber-700")
+
+    def status_chip(status: str) -> None:
+        ui.label(status_label(status)).classes("crm-chip crm-chip-status")
+
     def refresh_metrics() -> None:
         metrics_container.clear()
         counts = crm.counts()
         metrics = [
-            ("Companies", counts["companies"], "#eff6ff"),
-            ("Contacts", counts["contacts"], "#f0fdf4"),
-            ("Active", counts["active_customers"], "#ecfdf5"),
-            ("Leads", counts["leads"], "#fefce8"),
-            ("Open tasks", counts["open_tasks"], "#fffbeb"),
-            ("Overdue", counts["overdue_tasks"], "#fef2f2"),
+            ("Companies", counts["companies"], "#eff6ff", show_companies),
+            ("Contacts", counts["contacts"], "#f0fdf4", lambda: show_contacts()),
+            ("Active", counts["active_customers"], "#ecfdf5", lambda: show_contacts(status="active_customer")),
+            ("Leads", counts["leads"], "#fefce8", lambda: show_contacts(status="lead")),
+            ("Open tasks total", counts["open_tasks"], "#fffbeb", lambda: show_tasks(TASK_FILTER_OPEN)),
+            ("Overdue", counts["overdue_tasks"], "#fef2f2", lambda: show_tasks(TASK_FILTER_OVERDUE)),
         ]
         with metrics_container:
-            for label, value, background in metrics:
-                with ui.column().classes("crm-panel px-4 py-3 gap-0 min-w-[112px]").style(f"background: {background};"):
-                    ui.label(str(value)).classes("text-xl font-semibold text-gray-900")
-                    ui.label(label).classes("text-xs text-gray-600")
+            for label, value, background, on_click in metrics:
+                ui.button(f"{value} {label}", on_click=lambda _, handler=on_click: handler()).props("flat no-caps").classes(
+                    "crm-metric px-4 py-3 text-gray-900"
+                ).style(f"background: {background};")
+
+    def refresh_header_search() -> None:
+        header_search_container.clear()
+        label = "Search companies" if state["list_view"] == "companies" else "Search contacts"
+        with header_search_container:
+            ui.input(label, value=str(state["query"]), on_change=update_query).props("dense outlined clearable").classes(
+                "w-[320px] max-w-full"
+            )
+
+    def show_contacts(status: str | None = None) -> None:
+        state["list_view"] = "contacts"
+        state["selected_task"] = None
+        state["query"] = ""
+        state["company"] = None
+        state["status"] = status
+        state["tag"] = None
+        state["task_filter"] = TASK_FILTER_ALL
+        reset_page()
+        refresh_header_search()
+        refresh_filters()
+        refresh_contact_list()
+
+    def show_companies() -> None:
+        state["list_view"] = "companies"
+        state["selected_task"] = None
+        reset_page()
+        refresh_header_search()
+        refresh_contact_list()
+
+    def show_tasks(task_filter: str) -> None:
+        state["list_view"] = "tasks"
+        state["task_list_filter"] = task_filter
+        state["selected_task"] = None
+        reset_page()
+        refresh_header_search()
+        refresh_contact_list()
+
+    def show_company_contacts(company: Company) -> None:
+        state["list_view"] = "contacts"
+        state["selected_task"] = None
+        state["query"] = ""
+        state["company"] = company
+        state["status"] = None
+        state["tag"] = None
+        state["task_filter"] = TASK_FILTER_ALL
+        reset_page()
+        refresh_header_search()
+        refresh_filters()
+        refresh_contact_list()
+
+    def update_query(event) -> None:
+        state["selected_task"] = None
+        state["query"] = event.value or ""
+        reset_page()
+        if state["list_view"] != "companies":
+            state["list_view"] = "contacts"
+            refresh_header_search()
+        refresh_contact_list()
 
     def refresh_filters() -> None:
         filters_container.clear()
         with filters_container:
-            ui.label("Filters").classes("text-sm font-semibold text-gray-700")
-
-            def update_query(event) -> None:
-                state["query"] = event.value or ""
-                refresh_contact_list()
-
-            ui.input("Search", value=str(state["query"]), on_change=update_query).props("dense outlined clearable").classes("w-full")
+            ui.label("Filters").classes("crm-section-title")
 
             company_filter_options = {"All companies": None, **{company.name: company for company in crm.companies()}}
 
             def update_company(label: str) -> None:
+                state["list_view"] = "contacts"
+                state["selected_task"] = None
                 state["company"] = company_filter_options.get(label)
+                reset_page()
+                refresh_header_search()
                 refresh_contact_list()
 
             current_company = state["company"]
@@ -186,8 +336,12 @@ def crm_page() -> None:
             status_options = ["All statuses", *[status_label(status) for status in CONTACT_STATUSES]]
 
             def update_status(label: str) -> None:
+                state["list_view"] = "contacts"
+                state["selected_task"] = None
                 reverse = {status_label(status): status for status in CONTACT_STATUSES}
                 state["status"] = reverse.get(label)
+                reset_page()
+                refresh_header_search()
                 refresh_contact_list()
 
             current_status = state["status"]
@@ -201,7 +355,11 @@ def crm_page() -> None:
             tag_options = ["All tags", *crm.available_tags()]
 
             def update_tag(label: str) -> None:
+                state["list_view"] = "contacts"
+                state["selected_task"] = None
                 state["tag"] = None if label == "All tags" else label
+                reset_page()
+                refresh_header_search()
                 refresh_contact_list()
 
             ui.select(
@@ -212,7 +370,11 @@ def crm_page() -> None:
             ).props("dense outlined").classes("w-full")
 
             def update_task_filter(label: str) -> None:
+                state["list_view"] = "contacts"
+                state["selected_task"] = None
                 state["task_filter"] = task_filter_from_label(label)
+                reset_page()
+                refresh_header_search()
                 refresh_contact_list()
 
             ui.select(
@@ -225,7 +387,7 @@ def crm_page() -> None:
     def refresh_contact_form() -> None:
         contact_form_container.clear()
         with contact_form_container:
-            ui.label("New contact").classes("text-sm font-semibold text-gray-700")
+            ui.label("New contact").classes("crm-section-title")
             name_input = ui.input("Name").props("dense outlined").classes("w-full")
             email_input = ui.input("Email").props("dense outlined").classes("w-full")
             title_input = ui.input("Title").props("dense outlined").classes("w-full")
@@ -249,6 +411,7 @@ def crm_page() -> None:
                     notify_error(str(exc))
                     return
                 state["selected_contact"] = contact
+                state["selected_task"] = None
                 ui.notify("Contact added", position="top", type="positive")
                 refresh_all()
 
@@ -256,19 +419,32 @@ def crm_page() -> None:
 
     def refresh_contact_list() -> None:
         list_container.clear()
-        contacts = crm.search_contacts(
+        if state["list_view"] == "companies":
+            render_company_list()
+            return
+        if state["list_view"] == "tasks":
+            render_task_list(str(state["task_list_filter"]))
+            return
+        page_result = crm.search_contacts_page(
             query=str(state["query"]),
             company=state["company"] if state["company"] is not None else None,
             status=state["status"] if isinstance(state["status"], str) else None,
             tag=state["tag"] if isinstance(state["tag"], str) else None,
             task_filter=str(state["task_filter"]),
+            page=int(state["page"]),
+            page_size=int(state["page_size"]),
         )
+        contacts = page_result.items
         selected = selected_contact()
 
         with list_container:
-            ui.label(f"{len(contacts)} contacts").classes("text-sm text-gray-600")
+            if page_result.total == 0 and not any([state["query"], state["company"], state["status"], state["tag"]]):
+                render_empty_contacts()
+                return
+
+            render_list_heading(f"{page_result.total} contacts")
             if not contacts:
-                ui.label("No contacts match the current filters.").classes("text-sm text-gray-500 italic")
+                ui.label("No contacts match the current filters.").classes("crm-empty w-full p-4 text-sm text-gray-500")
                 return
             for contact in contacts:
                 is_selected = selected is contact
@@ -277,129 +453,266 @@ def crm_page() -> None:
                     "click", lambda _, c=contact: select_contact(c)
                 ):
                     with ui.row().classes("w-full items-start justify-between gap-3"):
-                        with ui.column().classes("gap-0"):
+                        with ui.column().classes("gap-0 min-w-0"):
                             ui.label(contact.name).classes("text-base font-semibold text-gray-900")
                             company_name = contact.company.name if contact.company else "No company"
-                            ui.label(f"{company_name} · {contact.title or 'No title'}").classes("text-xs text-gray-600")
-                        ui.label(status_label(contact.status)).classes("text-xs font-medium text-blue-700")
+                            ui.label(f"{company_name} · {contact.title or 'No title'}").classes("text-xs text-gray-600 break-words")
+                        status_chip(contact.status)
                     with ui.row().classes("items-center gap-2 flex-wrap"):
                         for tag in sorted(contact.tags):
                             ui.label(tag).classes("crm-chip")
-                    with ui.row().classes("items-center gap-4 text-xs text-gray-600"):
+                    task_label, task_chip_class, task_text_class = task_state(contact)
+                    with ui.row().classes("items-center gap-2 flex-wrap text-xs text-gray-600"):
                         ui.label(f"Last touch: {format_date(contact.last_touch_at)}")
-                        ui.label(f"Next: {format_date(contact.next_task_due_at)}")
-                        ui.label(f"Open: {contact.open_task_count}")
+                        ui.label(f"Next: {format_date(contact.next_task_due_at)}").classes(task_text_class)
+                        ui.label(task_label).classes(f"crm-chip {task_chip_class}")
+            render_pagination(page_result)
+
+    def render_list_heading(label: str) -> None:
+        counts = crm.counts()
+        with ui.column().classes("crm-panel w-full p-4 gap-2"):
+            with ui.row().classes("w-full items-center justify-between gap-3"):
+                ui.label(label).classes("text-sm font-semibold text-slate-700")
+                if counts["overdue_tasks"]:
+                    ui.label(f"{counts['overdue_tasks']} overdue").classes("crm-chip crm-chip-overdue")
+                else:
+                    ui.label("No overdue tasks").classes("crm-chip crm-chip-complete")
+            ui.label(f"{counts['open_tasks']} open tasks · {counts['active_customers']} active customers").classes("text-xs text-slate-500")
+
+    def render_empty_contacts() -> None:
+        with ui.column().classes("crm-empty w-full p-6 gap-4"):
+            ui.label("Start with sample CRM data").classes("text-lg font-semibold text-gray-900")
+            ui.label("Load a realistic set of companies, contacts, notes, and follow-up tasks, or add your first contact from the form.").classes(
+                "text-sm text-gray-600"
+            )
+            with ui.row().classes("items-center gap-2 flex-wrap"):
+                ui.button("Seed data", icon="dataset", on_click=seed_data).props("color=primary unelevated")
+                ui.button("Add contact", icon="person_add", on_click=lambda: ui.notify("Use the New contact form on this page.", position="top")).props(
+                    "flat color=primary"
+                )
+
+    def render_company_list() -> None:
+        page_result = crm.search_companies_page(str(state["query"]), page=int(state["page"]), page_size=int(state["page_size"]))
+        companies = page_result.items
+        with list_container:
+            render_list_heading(f"{page_result.total} companies")
+            if not companies:
+                ui.label("No companies yet.").classes("crm-empty w-full p-4 text-sm text-gray-500")
+                return
+            for company in companies:
+                contacts = crm.search_contacts(company=company, include_archived=True)
+                with ui.column().classes("crm-row w-full p-3 gap-1"):
+                    ui.button(company.name, on_click=lambda _, c=company: show_company_contacts(c)).props("flat dense no-caps").classes(
+                        "self-start text-base font-semibold text-gray-900 px-0"
+                    )
+                    ui.label(company.industry or "No industry").classes("text-xs text-gray-600")
+                    ui.label(company.website or "No website").classes("text-xs text-gray-600")
+                    ui.label(f"{len(contacts)} contacts").classes("text-xs text-gray-600")
+            render_pagination(page_result)
+
+    def render_task_list(task_filter: str) -> None:
+        today = date.today()
+        page_result = crm.task_rows_page(task_filter, today=today, page=int(state["page"]), page_size=int(state["page_size"]))
+        rows = page_result.items
+        label = "overdue tasks" if task_filter == TASK_FILTER_OVERDUE else "open tasks"
+        with list_container:
+            render_list_heading(f"{page_result.total} {label}")
+            if not rows:
+                ui.label(f"No {label}.").classes("crm-empty w-full p-4 text-sm text-gray-500")
+                return
+            for contact, task in rows:
+                task_label, task_chip_class, color = task_status(task)
+                company_name = contact.company.name if contact.company else "No company"
+                with ui.column().classes("crm-row w-full p-3 gap-1"):
+                    ui.button(task.title, on_click=lambda _, c=contact, t=task: select_task(c, t)).props("flat dense no-caps").classes(
+                        f"self-start text-base font-semibold {color} px-0"
+                    )
+                    ui.label(f"{contact.name} · {company_name}").classes("text-xs text-gray-600")
+                    description = getattr(task, "description", "")
+                    if description:
+                        ui.label(description).classes("text-xs text-gray-700")
+                    ui.label(f"{task_label} · Due: {format_date(task.due_date)}").classes(f"crm-chip {task_chip_class}")
+            render_pagination(page_result)
+
+    def render_pagination(page_result) -> None:
+        if page_result.page_count <= 1:
+            return
+
+        def go_to_page(page: int) -> None:
+            state["page"] = page
+            refresh_contact_list()
+
+        with ui.row().classes("w-full items-center justify-end gap-2 pt-2"):
+            ui.button("Previous", icon="chevron_left", on_click=lambda: go_to_page(page_result.page - 1)).props(
+                "flat dense" if page_result.has_previous else "flat dense disable"
+            )
+            ui.label(f"Page {page_result.page} of {page_result.page_count}").classes("text-xs text-gray-600")
+            ui.button("Next", icon="chevron_right", on_click=lambda: go_to_page(page_result.page + 1)).props(
+                "flat dense" if page_result.has_next else "flat dense disable"
+            )
 
     def select_contact(contact: Contact) -> None:
         state["selected_contact"] = contact
+        state["selected_task"] = None
+        refresh_contact_list()
+        refresh_detail()
+
+    def select_task(contact: Contact, task) -> None:
+        state["selected_contact"] = contact
+        state["selected_task"] = task
         refresh_contact_list()
         refresh_detail()
 
     def refresh_detail() -> None:
         detail_container.clear()
         contact = selected_contact()
+        task = selected_task()
         with detail_container:
             if contact is None:
-                ui.label("Select a contact").classes("text-lg font-semibold text-gray-900")
-                ui.label("Choose a contact from the list to view notes, tasks, tags, and follow-up actions.").classes(
-                    "text-sm text-gray-600"
-                )
+                with ui.column().classes("crm-empty w-full p-4 gap-2"):
+                    ui.label("Select a contact").classes("text-lg font-semibold text-gray-900")
+                    ui.label("Notes, tags, and follow-up tasks appear here.").classes("text-sm text-gray-600")
                 return
 
-            with ui.row().classes("w-full items-start justify-between gap-3"):
-                with ui.column().classes("gap-0"):
-                    ui.label(contact.name).classes("text-lg font-semibold text-gray-900")
-                    ui.label(contact.email or "No email").classes("text-sm text-gray-600")
-                    company_name = contact.company.name if contact.company else "No company"
-                    ui.label(f"{company_name} · {contact.title or 'No title'}").classes("text-sm text-gray-600")
-                with ui.row().classes("items-center gap-1"):
-                    ui.button("Edit", icon="edit", on_click=lambda: edit_contact_basics(contact)).props("flat color=primary")
-                    ui.button("Archive", icon="archive", on_click=lambda: archive_selected(contact)).props("flat color=negative")
+            if task is not None:
+                render_task_detail(contact, task)
+                return
 
-            ui.separator()
+            render_contact_header(contact)
             render_status_editor(contact)
             render_tag_editor(contact)
-            ui.separator()
             render_note_panel(contact)
-            ui.separator()
             render_task_panel(contact)
 
+    def render_contact_header(contact: Contact) -> None:
+        company_name = contact.company.name if contact.company else "No company"
+        task_label, task_chip_class, _ = task_state(contact)
+        with ui.column().classes("crm-panel w-full p-4 gap-3"):
+            with ui.row().classes("w-full items-start justify-between gap-3"):
+                with ui.column().classes("gap-1 min-w-0"):
+                    ui.label(contact.name).classes("text-xl font-semibold text-gray-900")
+                    ui.label(contact.email or "No email").classes("text-sm text-gray-600 break-words")
+                    ui.label(f"{company_name} · {contact.title or 'No title'}").classes("text-sm text-gray-600 break-words")
+                status_chip(contact.status)
+            with ui.row().classes("items-center gap-2 flex-wrap"):
+                ui.label(f"Last touch {format_date(contact.last_touch_at)}").classes("crm-chip crm-chip-muted")
+                ui.label(f"Next {format_date(contact.next_task_due_at)}").classes(f"crm-chip {task_chip_class}")
+                ui.label(task_label).classes(f"crm-chip {task_chip_class}")
+            with ui.row().classes("items-center gap-2 flex-wrap pt-1"):
+                ui.button("Edit", icon="edit", on_click=lambda: edit_contact_basics(contact)).props("flat dense color=primary")
+                ui.button("Archive", icon="archive", on_click=lambda: archive_selected(contact)).props("flat dense color=negative")
+
+    def render_task_detail(contact: Contact, task) -> None:
+        state_label, state_chip_class, state_class = task_status(task)
+        company_name = contact.company.name if contact.company else "No company"
+
+        with ui.column().classes("crm-panel w-full p-4 gap-3"):
+            with ui.row().classes("w-full items-start justify-between gap-3"):
+                with ui.column().classes("gap-1 min-w-0"):
+                    ui.label(task.title).classes("text-lg font-semibold text-gray-900")
+                    ui.label(f"{contact.name} · {company_name}").classes("text-sm text-gray-600")
+                    ui.label(f"Due: {format_date(task.due_date)}").classes(f"text-sm {state_class}")
+                ui.label(state_label).classes(f"crm-chip {state_chip_class}")
+            ui.button("Contact", icon="person", on_click=lambda: select_contact(contact)).props("flat color=primary").classes("self-start")
+
+        with ui.column().classes("crm-panel w-full p-4 gap-3"):
+            ui.label("Description").classes("crm-section-title")
+            ui.label(getattr(task, "description", "") or "No description.").classes("text-sm text-gray-800")
+            if task.completed:
+                ui.button("Reopen", icon="undo", on_click=lambda: reopen_task(contact, task)).props("size=sm").classes("self-start")
+            else:
+                ui.button("Mark done", icon="check", on_click=lambda: complete_task(contact, task)).props(
+                    "size=sm color=positive unelevated"
+                ).classes("self-start")
+
     def render_status_editor(contact: Contact) -> None:
-        status_select = ui.select(
-            [status_label(status) for status in CONTACT_STATUSES],
-            label="Relationship status",
-            value=status_label(contact.status),
-        ).props("dense outlined").classes("w-full")
+        with ui.column().classes("crm-panel w-full p-4 gap-3"):
+            ui.label("Relationship").classes("crm-section-title")
+            status_select = ui.select(
+                [status_label(status) for status in CONTACT_STATUSES],
+                label="Relationship status",
+                value=status_label(contact.status),
+            ).props("dense outlined").classes("w-full")
 
-        def save_status() -> None:
-            reverse_status = {status_label(status): status for status in CONTACT_STATUSES}
-            crm.change_contact_status(contact, reverse_status[status_select.value])
-            refresh_all()
+            def save_status() -> None:
+                reverse_status = {status_label(status): status for status in CONTACT_STATUSES}
+                crm.change_contact_status(contact, reverse_status[status_select.value])
+                refresh_all()
 
-        ui.button("Save status", icon="save", on_click=save_status).props("size=sm color=primary unelevated")
+            ui.button("Save status", icon="save", on_click=save_status).props("size=sm color=primary unelevated").classes("self-start")
 
     def render_tag_editor(contact: Contact) -> None:
-        ui.label("Tags").classes("text-sm font-semibold text-gray-700")
-        with ui.row().classes("items-center gap-2 flex-wrap"):
-            for tag in sorted(contact.tags):
-                with ui.row().classes("items-center gap-1 crm-chip"):
-                    ui.label(tag)
-                    ui.button(icon="close", on_click=lambda _, t=tag: remove_tag(contact, t)).props("flat dense round size=xs")
-        tag_input = ui.input("Add tag").props("dense outlined").classes("w-full")
+        with ui.column().classes("crm-panel w-full p-4 gap-3"):
+            ui.label("Tags").classes("crm-section-title")
+            with ui.row().classes("items-center gap-2 flex-wrap"):
+                if not contact.tags:
+                    ui.label("No tags yet.").classes("text-sm text-gray-500 italic")
+                for tag in sorted(contact.tags):
+                    with ui.row().classes("items-center gap-1 crm-chip"):
+                        ui.label(tag)
+                        ui.button(icon="close", on_click=lambda _, t=tag: remove_tag(contact, t)).props("flat dense round size=xs")
+            tag_input = ui.input("Add tag").props("dense outlined").classes("w-full")
 
-        def add_tag() -> None:
-            crm.add_contact_tag(contact, tag_input.value or "")
-            refresh_all()
+            def add_tag() -> None:
+                crm.add_contact_tag(contact, tag_input.value or "")
+                refresh_all()
 
-        ui.button("Add tag", icon="sell", on_click=add_tag).props("size=sm color=primary unelevated")
+            ui.button("Add tag", icon="sell", on_click=add_tag).props("size=sm color=primary unelevated").classes("self-start")
 
     def render_note_panel(contact: Contact) -> None:
-        ui.label("Notes").classes("text-sm font-semibold text-gray-700")
-        note_input = ui.textarea("New note").props("outlined autogrow").classes("w-full")
+        with ui.column().classes("crm-panel w-full p-4 gap-3"):
+            ui.label("Notes").classes("crm-section-title")
+            note_input = ui.textarea("New note").props("outlined autogrow").classes("w-full")
 
-        def add_note() -> None:
-            try:
-                crm.add_note(contact, note_input.value or "")
-            except ValueError as exc:
-                notify_error(str(exc))
-                return
-            refresh_all()
+            def add_note() -> None:
+                try:
+                    crm.add_note(contact, note_input.value or "")
+                except ValueError as exc:
+                    notify_error(str(exc))
+                    return
+                refresh_all()
 
-        ui.button("Add note", icon="note_add", on_click=add_note).props("size=sm color=primary unelevated")
-        if not contact.notes:
-            ui.label("No notes yet.").classes("text-sm text-gray-500 italic")
-        for note in sorted(contact.notes, key=lambda item: item.created_at, reverse=True):
-            with ui.column().classes("w-full p-2 bg-gray-50 rounded gap-1"):
-                ui.label(format_date(note.created_at)).classes("text-xs text-gray-500")
-                ui.label(note.body).classes("text-sm text-gray-800")
+            ui.button("Add note", icon="note_add", on_click=add_note).props("size=sm color=primary unelevated").classes("self-start")
+            if not contact.notes:
+                ui.label("No notes yet.").classes("text-sm text-gray-500 italic")
+            for note in sorted(contact.notes, key=lambda item: item.created_at, reverse=True):
+                with ui.column().classes("crm-note w-full p-3 gap-1"):
+                    ui.label(format_date(note.created_at)).classes("text-xs text-gray-500")
+                    ui.label(note.body).classes("text-sm text-gray-800")
 
     def render_task_panel(contact: Contact) -> None:
-        ui.label("Tasks").classes("text-sm font-semibold text-gray-700")
-        task_title = ui.input("Task title").props("dense outlined").classes("w-full")
-        due_date = ui.input("Due date", placeholder="YYYY-MM-DD").props("dense outlined").classes("w-full")
+        with ui.column().classes("crm-panel w-full p-4 gap-3"):
+            ui.label("Tasks").classes("crm-section-title")
+            task_title = ui.input("Task title").props("dense outlined").classes("w-full")
+            task_description = ui.textarea("Task description").props("outlined autogrow").classes("w-full")
+            due_date = ui.input("Due date", placeholder="YYYY-MM-DD").props("dense outlined").classes("w-full")
 
-        def add_task() -> None:
-            try:
-                crm.add_task(contact, task_title.value or "", parse_due_date(due_date.value))
-            except ValueError as exc:
-                notify_error(str(exc))
-                return
-            refresh_all()
+            def add_task() -> None:
+                try:
+                    crm.add_task(contact, task_title.value or "", parse_due_date(due_date.value), task_description.value or "")
+                except ValueError as exc:
+                    notify_error(str(exc))
+                    return
+                refresh_all()
 
-        ui.button("Add task", icon="add_task", on_click=add_task).props("size=sm color=primary unelevated")
-        if not contact.tasks:
-            ui.label("No tasks yet.").classes("text-sm text-gray-500 italic")
-        for task in sorted(contact.tasks, key=lambda item: (item.completed, item.due_date or date.max, item.created_at)):
-            overdue = not task.completed and task.due_date is not None and task.due_date < date.today()
-            color = "text-green-700" if task.completed else "text-red-700" if overdue else "text-amber-700"
-            with ui.row().classes("w-full items-center justify-between gap-2 p-2 bg-gray-50 rounded"):
-                with ui.column().classes("gap-0"):
-                    ui.label(task.title).classes(f"text-sm font-medium {color}")
-                    ui.label(f"Due: {format_date(task.due_date)}").classes("text-xs text-gray-500")
-                if task.completed:
-                    ui.button("Reopen", icon="undo", on_click=lambda _, t=task: reopen_task(contact, t)).props("flat size=sm")
-                else:
-                    ui.button("Done", icon="check", on_click=lambda _, t=task: complete_task(contact, t)).props("flat size=sm color=positive")
+            ui.button("Add task", icon="add_task", on_click=add_task).props("size=sm color=primary unelevated").classes("self-start")
+            if not contact.tasks:
+                ui.label("No tasks yet.").classes("text-sm text-gray-500 italic")
+            for task in sorted(contact.tasks, key=lambda item: (item.completed, item.due_date or date.max, item.created_at)):
+                state_label, state_chip_class, color = task_status(task)
+                with ui.row().classes("crm-task w-full items-center justify-between gap-3 p-3"):
+                    with ui.column().classes("gap-1 min-w-0"):
+                        ui.label(task.title).classes(f"text-sm font-semibold {color}")
+                        description = getattr(task, "description", "")
+                        if description:
+                            ui.label(description).classes("text-xs text-gray-700")
+                        ui.label(f"{state_label} · Due: {format_date(task.due_date)}").classes(f"crm-chip {state_chip_class}")
+                    if task.completed:
+                        ui.button("Reopen", icon="undo", on_click=lambda _, t=task: reopen_task(contact, t)).props("flat size=sm")
+                    else:
+                        ui.button("Mark done", icon="check", on_click=lambda _, t=task: complete_task(contact, t)).props(
+                            "flat size=sm color=positive"
+                        )
 
     def remove_tag(contact: Contact, tag: str) -> None:
         crm.remove_contact_tag(contact, tag)
@@ -468,11 +781,6 @@ def crm_page() -> None:
         ui.notify(message, position="top", type="positive")
         refresh_all()
 
-    def create_checkpoint() -> None:
-        checkpoint = crm.create_checkpoint(f"Checkpoint {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-        ui.notify(f"Saved {checkpoint.label}", position="top", type="positive")
-        refresh_metrics()
-
     def add_company() -> None:
         with ui.dialog() as dialog, ui.card().classes("w-[420px] max-w-full"):
             ui.label("Add company").classes("text-lg font-semibold")
@@ -495,23 +803,29 @@ def crm_page() -> None:
         dialog.open()
 
     with ui.header().classes("bg-white text-gray-900 border-b border-gray-200"):
-        with ui.row().classes("w-full items-center gap-3 px-4 py-2"):
+        with ui.row().classes("crm-header-row w-full items-center gap-3 px-4 py-2 flex-wrap"):
             ui.label("Simple CRM").classes("text-lg font-semibold")
+            header_search_container = ui.row().classes("crm-header-search items-center")
             ui.space()
-            ui.button("Add company", icon="business", on_click=add_company).props("flat")
-            ui.button("Seed data", icon="dataset", on_click=seed_data).props("flat")
-            ui.button("Checkpoint", icon="bookmark_add", on_click=create_checkpoint).props("flat")
+            with ui.row().classes("items-center gap-2 flex-wrap"):
+                ui.button("Add company", icon="business", on_click=add_company).props("flat")
+                ui.button("Seed data", icon="dataset", on_click=seed_data).props("flat")
 
-    with ui.row().classes("crm-shell w-full flex-nowrap items-start gap-4 p-4"):
-        with ui.column().classes("crm-panel w-[300px] shrink-0 p-4 gap-5"):
-            filters_container = ui.column().classes("w-full gap-3")
-            ui.separator()
-            contact_form_container = ui.column().classes("w-full gap-3")
-        with ui.column().classes("flex-grow min-w-0 gap-4"):
-            metrics_container = ui.row().classes("w-full gap-3")
-            list_container = ui.column().classes("w-full gap-2")
-        with ui.column().classes("crm-panel w-[380px] shrink-0 p-4 gap-3"):
-            detail_container = ui.column().classes("w-full gap-3")
+    with ui.column().classes("crm-shell crm-page-padding w-full p-4"):
+        with ui.element("div").classes("crm-layout"):
+            left_panel = ui.column().classes("crm-panel w-full p-4 gap-5")
+            main_panel = ui.column().classes("w-full min-w-0 gap-4")
+            detail_panel = ui.column().classes("crm-detail w-full gap-3")
+
+    with left_panel:
+        filters_container = ui.column().classes("w-full gap-3")
+        ui.separator()
+        contact_form_container = ui.column().classes("w-full gap-3")
+    with main_panel:
+        metrics_container = ui.row().classes("w-full gap-3 flex-wrap")
+        list_container = ui.column().classes("w-full gap-3")
+    with detail_panel:
+        detail_container = ui.column().classes("w-full gap-3")
 
     refresh_all()
 
