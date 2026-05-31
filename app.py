@@ -112,27 +112,30 @@ def crm_page() -> None:
         "page_size": 10,
     }
 
-    ui.colors(primary="#2563eb", secondary="#0f766e", accent="#d97706", positive="#059669", negative="#dc2626")
+    ui.colors(primary="#2563eb", secondary="#1e3a5f", accent="#647084", positive="#2563eb", negative="#b42318")
     ui.add_head_html(
         """
         <style>
         :root {
-            --crm-bg: #f4f6f8;
+            --crm-bg: #f5f7fa;
             --crm-surface: #ffffff;
             --crm-surface-soft: #f8fafc;
-            --crm-text: #111827;
-            --crm-muted: #667085;
-            --crm-border: #d9e0e8;
-            --crm-border-soft: #e7ecf2;
-            --crm-primary: #1f5eff;
-            --crm-primary-dark: #1747c7;
-            --crm-shadow: 0 16px 42px rgba(15, 23, 42, 0.08);
+            --crm-text: #172033;
+            --crm-muted: #647084;
+            --crm-border: #d8dee8;
+            --crm-border-soft: #e6ebf2;
+            --crm-primary: #2563eb;
+            --crm-primary-dark: #1e3a5f;
+            --crm-primary-soft: #eaf1ff;
+            --crm-danger: #b42318;
+            --crm-danger-soft: #fff1f2;
+            --crm-shadow: 0 16px 42px rgba(23, 32, 51, 0.08);
             --crm-shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.05), 0 10px 28px rgba(15, 23, 42, 0.05);
         }
         body {
             background:
-                radial-gradient(circle at 12% -10%, rgba(31, 94, 255, 0.09), transparent 26rem),
-                linear-gradient(180deg, #fbfcfe 0%, var(--crm-bg) 44%, #eef2f6 100%);
+                radial-gradient(circle at 12% -10%, rgba(37, 99, 235, 0.06), transparent 26rem),
+                linear-gradient(180deg, #fbfcfe 0%, var(--crm-bg) 44%, #edf1f6 100%);
             color: var(--crm-text);
             font-feature-settings: "cv02", "cv03", "cv04", "cv11";
         }
@@ -160,8 +163,8 @@ def crm_page() -> None:
             width: 34px;
             height: 34px;
             border-radius: 8px;
-            background: linear-gradient(135deg, #1f5eff 0%, #0f766e 100%);
-            box-shadow: 0 10px 22px rgba(31, 94, 255, 0.24);
+            background: linear-gradient(135deg, var(--crm-primary-dark) 0%, var(--crm-primary) 100%);
+            box-shadow: 0 10px 22px rgba(30, 58, 95, 0.24);
             position: relative;
         }
         .crm-brand-mark::after {
@@ -184,13 +187,13 @@ def crm_page() -> None:
         }
         .crm-row:hover {
             background: #ffffff;
-            border-color: rgba(31, 94, 255, 0.32);
+            border-color: rgba(37, 99, 235, 0.28);
             box-shadow: var(--crm-shadow);
             transform: translateY(-1px);
         }
         .crm-row-selected {
-            border-color: rgba(31, 94, 255, 0.72);
-            box-shadow: 0 0 0 1px rgba(31, 94, 255, 0.55) inset, var(--crm-shadow-soft);
+            border-color: rgba(37, 99, 235, 0.68);
+            box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.46) inset, var(--crm-shadow-soft);
         }
         .crm-row-selected::before {
             content: "";
@@ -207,20 +210,20 @@ def crm_page() -> None:
             padding: 3px 9px;
             font-size: 12px;
             line-height: 17px;
-            background: #eef4ff;
-            color: #2447a9;
-            border: 1px solid rgba(36, 71, 169, 0.11);
+            background: var(--crm-primary-soft);
+            color: #1e3a5f;
+            border: 1px solid #d6e2ff;
             font-weight: 600;
             max-width: 160px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
-        .crm-chip-status { background: #eef4ff; color: #1d4ed8; border-color: #cfe0ff; }
-        .crm-chip-muted { background: #f4f6f8; color: #526071; border-color: #e1e7ef; }
-        .crm-chip-open { background: #fff7e6; color: #a15c07; border-color: #f7dfae; }
-        .crm-chip-overdue { background: #fff1f2; color: #b42318; border-color: #ffd0d5; }
-        .crm-chip-complete { background: #ecfdf3; color: #067647; border-color: #b7efc8; }
+        .crm-chip-status { background: var(--crm-primary-soft); color: #1d4ed8; border-color: #d6e2ff; }
+        .crm-chip-muted { background: #f3f6fa; color: #526071; border-color: #dfe6ef; }
+        .crm-chip-open { background: #edf3ff; color: #1e3a5f; border-color: #d6e2ff; }
+        .crm-chip-overdue { background: var(--crm-danger-soft); color: var(--crm-danger); border-color: #ffd0d5; }
+        .crm-chip-complete { background: #f3f6fa; color: #526071; border-color: #dfe6ef; }
         .crm-metric {
             min-width: 132px;
             justify-content: flex-start;
@@ -232,7 +235,7 @@ def crm_page() -> None:
             transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
         }
         .crm-metric:hover {
-            border-color: rgba(31, 94, 255, 0.28);
+            border-color: rgba(37, 99, 235, 0.24);
             box-shadow: var(--crm-shadow);
             transform: translateY(-1px);
         }
@@ -334,15 +337,15 @@ def crm_page() -> None:
         if overdue_count:
             return (f"{overdue_count} overdue", "crm-chip-overdue", "text-red-700")
         if contact.open_task_count:
-            return (f"{contact.open_task_count} open", "crm-chip-open", "text-amber-700")
+            return (f"{contact.open_task_count} open", "crm-chip-open", "text-blue-800")
         return ("No open tasks", "crm-chip-muted", "text-slate-500")
 
     def task_status(task) -> tuple[str, str, str]:
         if task.completed:
-            return ("Completed", "crm-chip-complete", "text-green-700")
+            return ("Completed", "crm-chip-complete", "text-slate-600")
         if task.is_overdue():
             return ("Overdue", "crm-chip-overdue", "text-red-700")
-        return ("Open", "crm-chip-open", "text-amber-700")
+        return ("Open", "crm-chip-open", "text-blue-800")
 
     def status_chip(status: object) -> None:
         ui.label(status_label(status)).classes("crm-chip crm-chip-status")
@@ -351,12 +354,12 @@ def crm_page() -> None:
         metrics_container.clear()
         counts = crm.counts()
         metrics = [
-            ("Companies", counts["companies"], "#eff6ff", show_companies),
-            ("Contacts", counts["contacts"], "#f0fdf4", lambda: show_contacts()),
-            ("Active", counts["active_customers"], "#ecfdf5", lambda: show_contacts(status="active_customer")),
-            ("Leads", counts["leads"], "#fefce8", lambda: show_contacts(status="lead")),
-            ("Open tasks total", counts["open_tasks"], "#fffbeb", lambda: show_tasks(TASK_FILTER_OPEN)),
-            ("Overdue", counts["overdue_tasks"], "#fef2f2", lambda: show_tasks(TASK_FILTER_OVERDUE)),
+            ("Companies", counts["companies"], "#ffffff", show_companies),
+            ("Contacts", counts["contacts"], "#ffffff", lambda: show_contacts()),
+            ("Active", counts["active_customers"], "#f8fafc", lambda: show_contacts(status="active_customer")),
+            ("Leads", counts["leads"], "#f8fafc", lambda: show_contacts(status="lead")),
+            ("Open tasks total", counts["open_tasks"], "#eaf1ff", lambda: show_tasks(TASK_FILTER_OPEN)),
+            ("Overdue", counts["overdue_tasks"], "#fff1f2", lambda: show_tasks(TASK_FILTER_OVERDUE)),
         ]
         with metrics_container:
             for label, value, background, on_click in metrics:

@@ -11,23 +11,28 @@ import dbzero as db0
 from simple_crm.config import DATA_PREFIX
 from simple_crm.utils import PageResult
 
-CONTACT_STATUS_VALUES = [
-    "lead",
-    "prospect",
-    "active_customer",
-    "partner",
-    "inactive",
-    "archived",
-]
-ContactStatus = db0.enum("ContactStatus", values=CONTACT_STATUS_VALUES)
-CONTACT_STATUSES = [
-    ContactStatus.lead,
-    ContactStatus.prospect,
-    ContactStatus.active_customer,
-    ContactStatus.partner,
-    ContactStatus.inactive,
-    ContactStatus.archived,
-]
+ContactStatus = db0.enum(
+    "ContactStatus",
+    values=["lead", "prospect", "active_customer", "partner", "inactive", "archived"],
+)
+
+
+def _contact_statuses() -> tuple[object, ...]:
+    enum_all = getattr(ContactStatus, "all", None)
+    if callable(enum_all):
+        return tuple(enum_all())
+    return tuple(ContactStatus.values())
+
+
+class _ContactStatuses:
+    def __iter__(self):
+        return iter(_contact_statuses())
+
+    def __contains__(self, status: object) -> bool:
+        return status in _contact_statuses()
+
+
+CONTACT_STATUSES = _ContactStatuses()
 
 TASK_FILTER_ALL = "all"
 TASK_FILTER_OPEN = "open"
@@ -53,13 +58,13 @@ def _check_status(status: object) -> object:
         return status
     if isinstance(status, str):
         clean_status = status.strip()
-        if clean_status in CONTACT_STATUS_VALUES:
+        if clean_status in {str(contact_status) for contact_status in CONTACT_STATUSES}:
             return getattr(ContactStatus, clean_status)
     raise ValueError(f"Unknown contact status: {status!r}")
 
 
 def _status_key(status: object) -> str:
-    if isinstance(status, str) and status.strip() in CONTACT_STATUS_VALUES:
+    if isinstance(status, str) and status.strip() in {str(contact_status) for contact_status in CONTACT_STATUSES}:
         return status.strip()
     checked_status = _check_status(status)
     return str(checked_status)
@@ -253,8 +258,8 @@ class CRM:
     """The single durable root object for the Simple CRM app."""
 
     companies_by_name: dict[str, Company] = field(default_factory=dict)
-    contacts_by_company: dict[str, list[Contact]] = field(default_factory=dict)
-    contacts_by_status: dict[str, list[Contact]] = field(default_factory=dict)
+    contacts_by_company: dict[Company, list[Contact]] = field(default_factory=dict)
+    contacts_by_status: dict[object, list[Contact]] = field(default_factory=dict)
     contacts_by_tag: dict[str, list[Contact]] = field(default_factory=dict)
     contacts_by_next_task_date: db0.index = field(default_factory=db0.index)
 
@@ -283,9 +288,6 @@ class CRM:
         if old_key != new_key:
             self.companies_by_name.pop(old_key, None)
             self.companies_by_name[new_key] = company
-            contacts = self.contacts_by_company.pop(old_key, [])
-            if contacts:
-                self.contacts_by_company[new_key] = contacts
 
     def add_contact(
         self,
@@ -315,16 +317,16 @@ class CRM:
         contact.update_basics(name, email, title, company)
         if old_company is not company:
             if old_company is not None:
-                self._dict_list_remove(self.contacts_by_company, self._company_index_key(old_company), contact)
+                self._dict_list_remove(self.contacts_by_company, old_company, contact)
             if company is not None:
-                self._dict_list_add(self.contacts_by_company, self._company_index_key(company), contact)
+                self._dict_list_add(self.contacts_by_company, company, contact)
 
     def change_contact_status(self, contact: Contact, status: object) -> None:
         old_status = contact.status
         contact.change_status(status)
         if not _is_status(old_status, contact.status):
-            self._dict_list_remove(self.contacts_by_status, _status_key(old_status), contact)
-            self._dict_list_add(self.contacts_by_status, _status_key(contact.status), contact)
+            self._dict_list_remove(self.contacts_by_status, _check_status(old_status), contact)
+            self._dict_list_add(self.contacts_by_status, contact.status, contact)
 
     def archive_contact(self, contact: Contact) -> None:
         self.change_contact_status(contact, ContactStatus.archived)
@@ -531,9 +533,9 @@ class CRM:
     ) -> set[Contact]:
         candidate_sets: list[set[Contact]] = []
         if company is not None:
-            candidate_sets.append(set(self.contacts_by_company.get(self._company_index_key(company), [])))
+            candidate_sets.append(set(self.contacts_by_company.get(company, [])))
         if status:
-            candidate_sets.append(set(self.contacts_by_status.get(_status_key(status), [])))
+            candidate_sets.append(set(self.contacts_by_status.get(_check_status(status), [])))
         if tag:
             clean_tag = tag.strip().lower()
             candidate_sets.append(set(self.contacts_by_tag.get(clean_tag, [])))
@@ -543,8 +545,8 @@ class CRM:
 
     def _index_contact(self, contact: Contact) -> None:
         if contact.company is not None:
-            self._dict_list_add(self.contacts_by_company, self._company_index_key(contact.company), contact)
-        self._dict_list_add(self.contacts_by_status, _status_key(contact.status), contact)
+            self._dict_list_add(self.contacts_by_company, contact.company, contact)
+        self._dict_list_add(self.contacts_by_status, contact.status, contact)
         for tag in contact.tags:
             self._dict_list_add(self.contacts_by_tag, tag, contact)
         if contact.next_task_due_at is not None:
@@ -585,18 +587,15 @@ class CRM:
         stop = start + page_size
         return page, page_size, start, stop
 
-    def _company_index_key(self, company: Company) -> str:
-        return self._company_key(company.name)
-
     def _company_key(self, name: str) -> str:
         return name.strip().lower()
 
-    def _dict_list_add(self, index: dict[str, list[Contact]], key: str, contact: Contact) -> None:
+    def _dict_list_add(self, index: dict[object, list[Contact]], key: object, contact: Contact) -> None:
         contacts = index.setdefault(key, [])
         if contact not in contacts:
             contacts.append(contact)
 
-    def _dict_list_remove(self, index: dict[str, list[Contact]], key: str, contact: Contact) -> None:
+    def _dict_list_remove(self, index: dict[object, list[Contact]], key: object, contact: Contact) -> None:
         contacts = index.get(key)
         if not contacts:
             return

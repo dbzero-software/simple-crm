@@ -17,6 +17,8 @@ def test_search_filters_by_company_status_tag_and_text(crm):
     assert crm.search_contacts(tag="technical") == [avery]
     assert crm.search_contacts(query="renewal") == [jon]
     assert crm.search_contacts(query="northstar") == [avery]
+    assert crm.contacts_by_company[northstar] == [avery]
+    assert crm.contacts_by_status[ContactStatus.active_customer] == [jon]
 
 
 def test_contact_status_uses_dbzero_enum_with_string_inputs(crm):
