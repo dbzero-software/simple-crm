@@ -236,16 +236,6 @@ class Contact:
             raise ValueError("Task does not belong to this contact.")
 
 
-@db0.memo(prefix=DATA_PREFIX)
-@dataclass(eq=False)
-class CRMCheckpoint:
-    """A lightweight count checkpoint for tutorial activity tracking."""
-
-    label: str
-    counts: dict[str, int]
-    created_at: datetime = field(default_factory=_now)
-
-
 @db0.memo(prefix=DATA_PREFIX, singleton=True)
 @dataclass(eq=False)
 class CRM:
@@ -256,7 +246,6 @@ class CRM:
     contacts_by_status: dict[str, list[Contact]] = field(default_factory=dict)
     contacts_by_tag: dict[str, list[Contact]] = field(default_factory=dict)
     contacts_by_next_task_date: db0.index = field(default_factory=db0.index)
-    checkpoints_by_created_at: db0.index = field(default_factory=db0.index)
 
     def add_company(self, name: str, industry: str = "", website: str = "") -> Company:
         clean_name = name.strip()
@@ -465,14 +454,6 @@ class CRM:
             "completed_tasks": len([task for task in all_tasks if task.completed]),
             "overdue_tasks": len(self.overdue_tasks(today)),
         }
-
-    def create_checkpoint(self, label: str) -> CRMCheckpoint:
-        clean_label = label.strip()
-        if not clean_label:
-            raise ValueError("Checkpoint label is required.")
-        checkpoint = CRMCheckpoint(clean_label, self.counts())
-        self.checkpoints_by_created_at.add(checkpoint.created_at, checkpoint)
-        return checkpoint
 
     def search_contacts(
         self,

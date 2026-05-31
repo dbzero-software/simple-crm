@@ -66,16 +66,3 @@ def test_task_rows_return_open_tasks_with_contacts_in_due_order(crm):
     assert crm.task_rows(today=today) == [(grace, overdue), (avery, later)]
     assert crm.task_rows(TASK_FILTER_OVERDUE, today=today) == [(grace, overdue)]
 
-
-def test_checkpoint_records_current_counts(crm):
-    crm.add_company("Atlas Legal", "Legal services", "https://atlas.example")
-    contact = crm.add_contact("Theo Martin", status="partner")
-    task = crm.add_task(contact, "Check contract status")
-    crm.complete_task(contact, task)
-
-    checkpoint = crm.create_checkpoint("after first partner")
-
-    assert checkpoint.label == "after first partner"
-    assert checkpoint.counts["companies"] == 1
-    assert checkpoint.counts["contacts"] == 1
-    assert checkpoint.counts["completed_tasks"] == 1

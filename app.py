@@ -116,58 +116,169 @@ def crm_page() -> None:
     ui.add_head_html(
         """
         <style>
-        body { background: #f6f7fb; color: #111827; }
+        :root {
+            --crm-bg: #f4f6f8;
+            --crm-surface: #ffffff;
+            --crm-surface-soft: #f8fafc;
+            --crm-text: #111827;
+            --crm-muted: #667085;
+            --crm-border: #d9e0e8;
+            --crm-border-soft: #e7ecf2;
+            --crm-primary: #1f5eff;
+            --crm-primary-dark: #1747c7;
+            --crm-shadow: 0 16px 42px rgba(15, 23, 42, 0.08);
+            --crm-shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.05), 0 10px 28px rgba(15, 23, 42, 0.05);
+        }
+        body {
+            background:
+                radial-gradient(circle at 12% -10%, rgba(31, 94, 255, 0.09), transparent 26rem),
+                linear-gradient(180deg, #fbfcfe 0%, var(--crm-bg) 44%, #eef2f6 100%);
+            color: var(--crm-text);
+            font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+        }
+        .q-page-container { background: transparent; }
         .crm-shell { min-height: 100vh; }
         .crm-layout {
             display: grid;
-            grid-template-columns: minmax(260px, 300px) minmax(360px, 1fr) minmax(320px, 380px);
-            gap: 16px;
+            grid-template-columns: minmax(268px, 304px) minmax(390px, 1fr) minmax(330px, 390px);
+            gap: 18px;
             align-items: start;
             width: 100%;
+            max-width: 1560px;
+            margin: 0 auto;
+        }
+        .crm-topbar {
+            background: rgba(255, 255, 255, 0.92);
+            border-bottom: 1px solid rgba(217, 224, 232, 0.9);
+            box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 10px 30px rgba(15, 23, 42, 0.05);
+            backdrop-filter: blur(16px);
+        }
+        .crm-brand {
+            min-width: 172px;
+        }
+        .crm-brand-mark {
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #1f5eff 0%, #0f766e 100%);
+            box-shadow: 0 10px 22px rgba(31, 94, 255, 0.24);
+            position: relative;
+        }
+        .crm-brand-mark::after {
+            content: "";
+            position: absolute;
+            inset: 9px;
+            border: 2px solid rgba(255, 255, 255, 0.92);
+            border-radius: 5px;
         }
         .crm-panel, .crm-row, .crm-empty {
-            background: white;
-            border: 1px solid #e2e8f0;
+            background: rgba(255, 255, 255, 0.96);
+            border: 1px solid var(--crm-border-soft);
             border-radius: 8px;
-            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+            box-shadow: var(--crm-shadow-soft);
         }
-        .crm-row { transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease; }
-        .crm-row:hover { border-color: #bfdbfe; box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06); transform: translateY(-1px); }
-        .crm-row-selected { border-color: #2563eb; box-shadow: 0 0 0 1px #2563eb inset; }
+        .crm-panel { overflow: hidden; }
+        .crm-row {
+            position: relative;
+            transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease, background 140ms ease;
+        }
+        .crm-row:hover {
+            background: #ffffff;
+            border-color: rgba(31, 94, 255, 0.32);
+            box-shadow: var(--crm-shadow);
+            transform: translateY(-1px);
+        }
+        .crm-row-selected {
+            border-color: rgba(31, 94, 255, 0.72);
+            box-shadow: 0 0 0 1px rgba(31, 94, 255, 0.55) inset, var(--crm-shadow-soft);
+        }
+        .crm-row-selected::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 12px;
+            bottom: 12px;
+            width: 3px;
+            border-radius: 0 999px 999px 0;
+            background: var(--crm-primary);
+        }
         .crm-chip {
             border-radius: 999px;
-            padding: 2px 8px;
+            padding: 3px 9px;
             font-size: 12px;
-            line-height: 18px;
-            background: #eef2ff;
-            color: #3730a3;
+            line-height: 17px;
+            background: #eef4ff;
+            color: #2447a9;
+            border: 1px solid rgba(36, 71, 169, 0.11);
+            font-weight: 600;
             max-width: 160px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
-        .crm-chip-status { background: #eff6ff; color: #1d4ed8; font-weight: 600; }
-        .crm-chip-muted { background: #f1f5f9; color: #475569; }
-        .crm-chip-open { background: #fffbeb; color: #b45309; }
-        .crm-chip-overdue { background: #fef2f2; color: #b91c1c; }
-        .crm-chip-complete { background: #ecfdf5; color: #047857; }
+        .crm-chip-status { background: #eef4ff; color: #1d4ed8; border-color: #cfe0ff; }
+        .crm-chip-muted { background: #f4f6f8; color: #526071; border-color: #e1e7ef; }
+        .crm-chip-open { background: #fff7e6; color: #a15c07; border-color: #f7dfae; }
+        .crm-chip-overdue { background: #fff1f2; color: #b42318; border-color: #ffd0d5; }
+        .crm-chip-complete { background: #ecfdf3; color: #067647; border-color: #b7efc8; }
         .crm-metric {
             min-width: 132px;
             justify-content: flex-start;
             text-align: left;
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--crm-border-soft);
             border-radius: 8px;
+            box-shadow: var(--crm-shadow-soft);
+            font-weight: 700;
+            transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+        }
+        .crm-metric:hover {
+            border-color: rgba(31, 94, 255, 0.28);
+            box-shadow: var(--crm-shadow);
+            transform: translateY(-1px);
         }
         .crm-section-title {
-            color: #334155;
-            font-size: 13px;
-            font-weight: 700;
+            color: #2f3b4a;
+            font-size: 12px;
+            font-weight: 800;
             letter-spacing: 0;
+            text-transform: uppercase;
         }
         .crm-note, .crm-task {
-            background: #f8fafc;
-            border: 1px solid #e5e7eb;
+            background: var(--crm-surface-soft);
+            border: 1px solid var(--crm-border-soft);
             border-radius: 8px;
+        }
+        .crm-task { align-items: stretch; }
+        .crm-empty {
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98));
+        }
+        .crm-action .q-btn {
+            border-radius: 8px;
+        }
+        .crm-header-search .q-field__control,
+        .crm-panel .q-field__control,
+        .crm-dialog-card .q-field__control {
+            border-radius: 8px;
+            background: #ffffff;
+        }
+        .crm-header-search .q-field--outlined .q-field__control::before,
+        .crm-panel .q-field--outlined .q-field__control::before,
+        .crm-dialog-card .q-field--outlined .q-field__control::before {
+            border-color: var(--crm-border);
+        }
+        .crm-header-search .q-field--focused .q-field__control::after,
+        .crm-panel .q-field--focused .q-field__control::after,
+        .crm-dialog-card .q-field--focused .q-field__control::after {
+            border-color: var(--crm-primary);
+            border-width: 1px;
+        }
+        .crm-dialog-card {
+            border-radius: 8px;
+            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+        }
+        .crm-subtle-divider {
+            background: linear-gradient(90deg, transparent, #dfe6ee 18%, #dfe6ee 82%, transparent);
         }
         @media (max-width: 1100px) {
             .crm-layout { grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); }
@@ -177,6 +288,7 @@ def crm_page() -> None:
             .crm-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; }
             .crm-page-padding { padding: 12px; }
             .crm-header-row { align-items: stretch; }
+            .crm-brand { min-width: 100%; }
             .crm-header-search { width: 100%; }
             .crm-header-search .q-field { width: 100%; }
             .crm-metric { min-width: calc(50% - 6px); flex: 1 1 calc(50% - 6px); }
@@ -249,7 +361,7 @@ def crm_page() -> None:
         with metrics_container:
             for label, value, background, on_click in metrics:
                 ui.button(f"{value} {label}", on_click=lambda _, handler=on_click: handler()).props("flat no-caps").classes(
-                    "crm-metric px-4 py-3 text-gray-900"
+                    "crm-metric px-4 py-3 text-slate-900"
                 ).style(f"background: {background};")
 
     def refresh_header_search() -> None:
@@ -449,20 +561,20 @@ def crm_page() -> None:
             for contact in contacts:
                 is_selected = selected is contact
                 row_class = "crm-row-selected" if is_selected else ""
-                with ui.column().classes(f"crm-row {row_class} w-full p-3 gap-2 cursor-pointer").on(
+                with ui.column().classes(f"crm-row {row_class} w-full p-4 gap-3 cursor-pointer").on(
                     "click", lambda _, c=contact: select_contact(c)
                 ):
                     with ui.row().classes("w-full items-start justify-between gap-3"):
                         with ui.column().classes("gap-0 min-w-0"):
-                            ui.label(contact.name).classes("text-base font-semibold text-gray-900")
+                            ui.label(contact.name).classes("text-base font-semibold text-slate-950")
                             company_name = contact.company.name if contact.company else "No company"
-                            ui.label(f"{company_name} · {contact.title or 'No title'}").classes("text-xs text-gray-600 break-words")
+                            ui.label(f"{company_name} · {contact.title or 'No title'}").classes("text-xs text-slate-500 break-words")
                         status_chip(contact.status)
                     with ui.row().classes("items-center gap-2 flex-wrap"):
                         for tag in sorted(contact.tags):
                             ui.label(tag).classes("crm-chip")
                     task_label, task_chip_class, task_text_class = task_state(contact)
-                    with ui.row().classes("items-center gap-2 flex-wrap text-xs text-gray-600"):
+                    with ui.row().classes("items-center gap-2 flex-wrap text-xs text-slate-500"):
                         ui.label(f"Last touch: {format_date(contact.last_touch_at)}")
                         ui.label(f"Next: {format_date(contact.next_task_due_at)}").classes(task_text_class)
                         ui.label(task_label).classes(f"crm-chip {task_chip_class}")
@@ -481,9 +593,9 @@ def crm_page() -> None:
 
     def render_empty_contacts() -> None:
         with ui.column().classes("crm-empty w-full p-6 gap-4"):
-            ui.label("Start with sample CRM data").classes("text-lg font-semibold text-gray-900")
+            ui.label("Start with sample CRM data").classes("text-lg font-semibold text-slate-950")
             ui.label("Load a realistic set of companies, contacts, notes, and follow-up tasks, or add your first contact from the form.").classes(
-                "text-sm text-gray-600"
+                "text-sm text-slate-500"
             )
             with ui.row().classes("items-center gap-2 flex-wrap"):
                 ui.button("Seed data", icon="dataset", on_click=seed_data).props("color=primary unelevated")
@@ -501,13 +613,13 @@ def crm_page() -> None:
                 return
             for company in companies:
                 contacts = crm.search_contacts(company=company, include_archived=True)
-                with ui.column().classes("crm-row w-full p-3 gap-1"):
+                with ui.column().classes("crm-row w-full p-4 gap-2"):
                     ui.button(company.name, on_click=lambda _, c=company: show_company_contacts(c)).props("flat dense no-caps").classes(
-                        "self-start text-base font-semibold text-gray-900 px-0"
+                        "self-start text-base font-semibold text-slate-950 px-0"
                     )
-                    ui.label(company.industry or "No industry").classes("text-xs text-gray-600")
-                    ui.label(company.website or "No website").classes("text-xs text-gray-600")
-                    ui.label(f"{len(contacts)} contacts").classes("text-xs text-gray-600")
+                    ui.label(company.industry or "No industry").classes("text-xs text-slate-500")
+                    ui.label(company.website or "No website").classes("text-xs text-slate-500")
+                    ui.label(f"{len(contacts)} contacts").classes("text-xs text-slate-500")
             render_pagination(page_result)
 
     def render_task_list(task_filter: str) -> None:
@@ -523,14 +635,14 @@ def crm_page() -> None:
             for contact, task in rows:
                 task_label, task_chip_class, color = task_status(task)
                 company_name = contact.company.name if contact.company else "No company"
-                with ui.column().classes("crm-row w-full p-3 gap-1"):
+                with ui.column().classes("crm-row w-full p-4 gap-2"):
                     ui.button(task.title, on_click=lambda _, c=contact, t=task: select_task(c, t)).props("flat dense no-caps").classes(
                         f"self-start text-base font-semibold {color} px-0"
                     )
-                    ui.label(f"{contact.name} · {company_name}").classes("text-xs text-gray-600")
+                    ui.label(f"{contact.name} · {company_name}").classes("text-xs text-slate-500")
                     description = getattr(task, "description", "")
                     if description:
-                        ui.label(description).classes("text-xs text-gray-700")
+                        ui.label(description).classes("text-xs text-slate-700")
                     ui.label(f"{task_label} · Due: {format_date(task.due_date)}").classes(f"crm-chip {task_chip_class}")
             render_pagination(page_result)
 
@@ -570,8 +682,8 @@ def crm_page() -> None:
         with detail_container:
             if contact is None:
                 with ui.column().classes("crm-empty w-full p-4 gap-2"):
-                    ui.label("Select a contact").classes("text-lg font-semibold text-gray-900")
-                    ui.label("Notes, tags, and follow-up tasks appear here.").classes("text-sm text-gray-600")
+                    ui.label("Select a contact").classes("text-lg font-semibold text-slate-950")
+                    ui.label("Notes, tags, and follow-up tasks appear here.").classes("text-sm text-slate-500")
                 return
 
             if task is not None:
@@ -590,9 +702,9 @@ def crm_page() -> None:
         with ui.column().classes("crm-panel w-full p-4 gap-3"):
             with ui.row().classes("w-full items-start justify-between gap-3"):
                 with ui.column().classes("gap-1 min-w-0"):
-                    ui.label(contact.name).classes("text-xl font-semibold text-gray-900")
-                    ui.label(contact.email or "No email").classes("text-sm text-gray-600 break-words")
-                    ui.label(f"{company_name} · {contact.title or 'No title'}").classes("text-sm text-gray-600 break-words")
+                    ui.label(contact.name).classes("text-xl font-semibold text-slate-950")
+                    ui.label(contact.email or "No email").classes("text-sm text-slate-500 break-words")
+                    ui.label(f"{company_name} · {contact.title or 'No title'}").classes("text-sm text-slate-500 break-words")
                 status_chip(contact.status)
             with ui.row().classes("items-center gap-2 flex-wrap"):
                 ui.label(f"Last touch {format_date(contact.last_touch_at)}").classes("crm-chip crm-chip-muted")
@@ -609,15 +721,15 @@ def crm_page() -> None:
         with ui.column().classes("crm-panel w-full p-4 gap-3"):
             with ui.row().classes("w-full items-start justify-between gap-3"):
                 with ui.column().classes("gap-1 min-w-0"):
-                    ui.label(task.title).classes("text-lg font-semibold text-gray-900")
-                    ui.label(f"{contact.name} · {company_name}").classes("text-sm text-gray-600")
+                    ui.label(task.title).classes("text-lg font-semibold text-slate-950")
+                    ui.label(f"{contact.name} · {company_name}").classes("text-sm text-slate-500")
                     ui.label(f"Due: {format_date(task.due_date)}").classes(f"text-sm {state_class}")
                 ui.label(state_label).classes(f"crm-chip {state_chip_class}")
             ui.button("Contact", icon="person", on_click=lambda: select_contact(contact)).props("flat color=primary").classes("self-start")
 
         with ui.column().classes("crm-panel w-full p-4 gap-3"):
             ui.label("Description").classes("crm-section-title")
-            ui.label(getattr(task, "description", "") or "No description.").classes("text-sm text-gray-800")
+            ui.label(getattr(task, "description", "") or "No description.").classes("text-sm text-slate-800")
             if task.completed:
                 ui.button("Reopen", icon="undo", on_click=lambda: reopen_task(contact, task)).props("size=sm").classes("self-start")
             else:
@@ -646,7 +758,7 @@ def crm_page() -> None:
             ui.label("Tags").classes("crm-section-title")
             with ui.row().classes("items-center gap-2 flex-wrap"):
                 if not contact.tags:
-                    ui.label("No tags yet.").classes("text-sm text-gray-500 italic")
+                    ui.label("No tags yet.").classes("text-sm text-slate-500 italic")
                 for tag in sorted(contact.tags):
                     with ui.row().classes("items-center gap-1 crm-chip"):
                         ui.label(tag)
@@ -674,11 +786,11 @@ def crm_page() -> None:
 
             ui.button("Add note", icon="note_add", on_click=add_note).props("size=sm color=primary unelevated").classes("self-start")
             if not contact.notes:
-                ui.label("No notes yet.").classes("text-sm text-gray-500 italic")
+                ui.label("No notes yet.").classes("text-sm text-slate-500 italic")
             for note in sorted(contact.notes, key=lambda item: item.created_at, reverse=True):
                 with ui.column().classes("crm-note w-full p-3 gap-1"):
-                    ui.label(format_date(note.created_at)).classes("text-xs text-gray-500")
-                    ui.label(note.body).classes("text-sm text-gray-800")
+                    ui.label(format_date(note.created_at)).classes("text-xs text-slate-500")
+                    ui.label(note.body).classes("text-sm text-slate-800")
 
     def render_task_panel(contact: Contact) -> None:
         with ui.column().classes("crm-panel w-full p-4 gap-3"):
@@ -697,7 +809,7 @@ def crm_page() -> None:
 
             ui.button("Add task", icon="add_task", on_click=add_task).props("size=sm color=primary unelevated").classes("self-start")
             if not contact.tasks:
-                ui.label("No tasks yet.").classes("text-sm text-gray-500 italic")
+                ui.label("No tasks yet.").classes("text-sm text-slate-500 italic")
             for task in sorted(contact.tasks, key=lambda item: (item.completed, item.due_date or date.max, item.created_at)):
                 state_label, state_chip_class, color = task_status(task)
                 with ui.row().classes("crm-task w-full items-center justify-between gap-3 p-3"):
@@ -705,7 +817,7 @@ def crm_page() -> None:
                         ui.label(task.title).classes(f"text-sm font-semibold {color}")
                         description = getattr(task, "description", "")
                         if description:
-                            ui.label(description).classes("text-xs text-gray-700")
+                            ui.label(description).classes("text-xs text-slate-700")
                         ui.label(f"{state_label} · Due: {format_date(task.due_date)}").classes(f"crm-chip {state_chip_class}")
                     if task.completed:
                         ui.button("Reopen", icon="undo", on_click=lambda _, t=task: reopen_task(contact, t)).props("flat size=sm")
@@ -737,7 +849,7 @@ def crm_page() -> None:
         if current_company_label not in contact_company_options:
             contact_company_options[current_company_label] = contact.company
 
-        with ui.dialog() as dialog, ui.card().classes("w-[460px] max-w-full"):
+        with ui.dialog() as dialog, ui.card().classes("crm-dialog-card w-[460px] max-w-full"):
             ui.label("Edit contact").classes("text-lg font-semibold")
             name = ui.input("Name", value=contact.name).props("dense outlined").classes("w-full")
             email = ui.input("Email", value=contact.email).props("dense outlined").classes("w-full")
@@ -782,7 +894,7 @@ def crm_page() -> None:
         refresh_all()
 
     def add_company() -> None:
-        with ui.dialog() as dialog, ui.card().classes("w-[420px] max-w-full"):
+        with ui.dialog() as dialog, ui.card().classes("crm-dialog-card w-[420px] max-w-full"):
             ui.label("Add company").classes("text-lg font-semibold")
             name = ui.input("Name").props("dense outlined").classes("w-full")
             industry = ui.input("Industry").props("dense outlined").classes("w-full")
@@ -802,16 +914,18 @@ def crm_page() -> None:
                 ui.button("Save", icon="save", on_click=save).props("color=primary unelevated")
         dialog.open()
 
-    with ui.header().classes("bg-white text-gray-900 border-b border-gray-200"):
-        with ui.row().classes("crm-header-row w-full items-center gap-3 px-4 py-2 flex-wrap"):
-            ui.label("Simple CRM").classes("text-lg font-semibold")
+    with ui.header().classes("crm-topbar text-slate-950"):
+        with ui.row().classes("crm-header-row w-full items-center gap-3 px-5 py-3 flex-wrap"):
+            with ui.row().classes("crm-brand items-center gap-3"):
+                ui.element("div").classes("crm-brand-mark")
+                ui.label("Simple CRM").classes("text-lg font-bold")
             header_search_container = ui.row().classes("crm-header-search items-center")
             ui.space()
             with ui.row().classes("items-center gap-2 flex-wrap"):
-                ui.button("Add company", icon="business", on_click=add_company).props("flat")
-                ui.button("Seed data", icon="dataset", on_click=seed_data).props("flat")
+                ui.button("Add company", icon="business", on_click=add_company).props("outline color=primary")
+                ui.button("Seed data", icon="dataset", on_click=seed_data).props("color=primary unelevated")
 
-    with ui.column().classes("crm-shell crm-page-padding w-full p-4"):
+    with ui.column().classes("crm-shell crm-page-padding w-full p-5"):
         with ui.element("div").classes("crm-layout"):
             left_panel = ui.column().classes("crm-panel w-full p-4 gap-5")
             main_panel = ui.column().classes("w-full min-w-0 gap-4")
@@ -819,7 +933,7 @@ def crm_page() -> None:
 
     with left_panel:
         filters_container = ui.column().classes("w-full gap-3")
-        ui.separator()
+        ui.separator().classes("crm-subtle-divider")
         contact_form_container = ui.column().classes("w-full gap-3")
     with main_panel:
         metrics_container = ui.row().classes("w-full gap-3 flex-wrap")

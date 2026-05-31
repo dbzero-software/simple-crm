@@ -6,6 +6,8 @@ tool with dbzero and NiceGUI.
 The current implementation contains the durable CRM domain model, sample data,
 tests, and a compact NiceGUI interface.
 
+![Simple CRM browser interface](docs/simple-crm-screenshot.png)
+
 ## What The App Does
 
 Simple CRM tracks companies, contacts, notes, tags, and follow-up tasks. It is
