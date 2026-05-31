@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 
-from simple_crm.models import TASK_FILTER_OPEN, TASK_FILTER_OVERDUE
+from simple_crm.models import ContactStatus, TASK_FILTER_OPEN, TASK_FILTER_OVERDUE
 from simple_crm.seed import seed_sample_data
 
 
@@ -17,6 +17,20 @@ def test_search_filters_by_company_status_tag_and_text(crm):
     assert crm.search_contacts(tag="technical") == [avery]
     assert crm.search_contacts(query="renewal") == [jon]
     assert crm.search_contacts(query="northstar") == [avery]
+
+
+def test_contact_status_uses_dbzero_enum_with_string_inputs(crm):
+    contact = crm.add_contact("Avery Stone", status="lead")
+
+    assert contact.status == ContactStatus.lead
+    assert contact.status != "lead"
+    assert crm.search_contacts(status="lead") == [contact]
+
+    crm.change_contact_status(contact, ContactStatus.active_customer)
+
+    assert contact.status == ContactStatus.active_customer
+    assert crm.search_contacts(status="active_customer") == [contact]
+    assert crm.counts()["active_customers"] == 1
 
 
 def test_search_companies_filters_by_company_text(crm):

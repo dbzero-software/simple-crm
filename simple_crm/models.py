@@ -9,8 +9,9 @@ from typing import Iterable
 import dbzero as db0
 
 from simple_crm.config import DATA_PREFIX
+from simple_crm.utils import PageResult
 
-CONTACT_STATUSES = [
+CONTACT_STATUS_VALUES = [
     "lead",
     "prospect",
     "active_customer",
@@ -18,34 +19,19 @@ CONTACT_STATUSES = [
     "inactive",
     "archived",
 ]
+ContactStatus = db0.enum("ContactStatus", values=CONTACT_STATUS_VALUES)
+CONTACT_STATUSES = [
+    ContactStatus.lead,
+    ContactStatus.prospect,
+    ContactStatus.active_customer,
+    ContactStatus.partner,
+    ContactStatus.inactive,
+    ContactStatus.archived,
+]
 
 TASK_FILTER_ALL = "all"
 TASK_FILTER_OPEN = "open"
 TASK_FILTER_OVERDUE = "overdue"
-
-
-@dataclass(frozen=True)
-class PageResult:
-    """A small page of domain objects plus enough metadata for UI controls."""
-
-    items: list
-    total: int
-    page: int
-    page_size: int
-
-    @property
-    def page_count(self) -> int:
-        if self.total == 0:
-            return 1
-        return ((self.total - 1) // self.page_size) + 1
-
-    @property
-    def has_previous(self) -> bool:
-        return self.page > 1
-
-    @property
-    def has_next(self) -> bool:
-        return self.page < self.page_count
 
 
 def _now() -> datetime:
@@ -62,10 +48,35 @@ def _normalize_tags(tags: Iterable[str] | str | None) -> set[str]:
     return {tag.strip().lower() for tag in raw_tags if tag and tag.strip()}
 
 
-def _check_status(status: str) -> str:
-    if status not in CONTACT_STATUSES:
-        raise ValueError(f"Unknown contact status: {status!r}")
-    return status
+def _check_status(status: object) -> object:
+    if status in CONTACT_STATUSES:
+        return status
+    if isinstance(status, str):
+        clean_status = status.strip()
+        if clean_status in CONTACT_STATUS_VALUES:
+            return getattr(ContactStatus, clean_status)
+    raise ValueError(f"Unknown contact status: {status!r}")
+
+
+def _status_key(status: object) -> str:
+    if isinstance(status, str) and status.strip() in CONTACT_STATUS_VALUES:
+        return status.strip()
+    checked_status = _check_status(status)
+    return str(checked_status)
+
+
+def _is_status(status: object, expected: object) -> bool:
+    try:
+        return _status_key(status) == _status_key(expected)
+    except ValueError:
+        return False
+
+
+def _ensure_contact_status(contact: "Contact") -> None:
+    if isinstance(contact.status, str):
+        contact.status = _check_status(contact.status)
+    elif contact.status not in CONTACT_STATUSES:
+        raise ValueError(f"Unknown contact status: {contact.status!r}")
 
 
 @db0.memo(prefix=DATA_PREFIX)
@@ -131,7 +142,7 @@ class Contact:
     email: str = ""
     title: str = ""
     company: Company | None = None
-    status: str = "lead"
+    status: object = ContactStatus.lead
     tags: set[str] = field(default_factory=set)
     notes: list[Note] = field(default_factory=list)
     tasks: list[Task] = field(default_factory=list)
@@ -181,9 +192,9 @@ class Contact:
         self.company = company
         self.updated_at = _now()
 
-    def change_status(self, status: str) -> None:
+    def change_status(self, status: object) -> None:
         self.status = _check_status(status)
-        self.archived = status == "archived"
+        self.archived = _is_status(status, ContactStatus.archived)
         self.updated_at = _now()
 
     def add_note(self, body: str) -> Note:
@@ -227,7 +238,7 @@ class Contact:
             self.updated_at = _now()
 
     def archive(self) -> None:
-        self.status = "archived"
+        self.status = ContactStatus.archived
         self.archived = True
         self.updated_at = _now()
 
@@ -282,7 +293,7 @@ class CRM:
         email: str = "",
         title: str = "",
         company: Company | None = None,
-        status: str = "lead",
+        status: object = ContactStatus.lead,
         tags: Iterable[str] | str | None = None,
     ) -> Contact:
         clean_name = name.strip()
@@ -308,15 +319,15 @@ class CRM:
             if company is not None:
                 self._dict_list_add(self.contacts_by_company, self._company_index_key(company), contact)
 
-    def change_contact_status(self, contact: Contact, status: str) -> None:
+    def change_contact_status(self, contact: Contact, status: object) -> None:
         old_status = contact.status
         contact.change_status(status)
-        if old_status != contact.status:
-            self._dict_list_remove(self.contacts_by_status, old_status, contact)
-            self._dict_list_add(self.contacts_by_status, contact.status, contact)
+        if not _is_status(old_status, contact.status):
+            self._dict_list_remove(self.contacts_by_status, _status_key(old_status), contact)
+            self._dict_list_add(self.contacts_by_status, _status_key(contact.status), contact)
 
     def archive_contact(self, contact: Contact) -> None:
-        self.change_contact_status(contact, "archived")
+        self.change_contact_status(contact, ContactStatus.archived)
 
     def add_contact_tag(self, contact: Contact, tag: str) -> None:
         before = set(list(contact.tags))
@@ -374,8 +385,10 @@ class CRM:
 
     def contacts(self, include_archived: bool = False) -> list[Contact]:
         contacts = list(db0.find(Contact))
+        for contact in contacts:
+            _ensure_contact_status(contact)
         if not include_archived:
-            contacts = [contact for contact in contacts if not contact.archived and contact.status != "archived"]
+            contacts = [contact for contact in contacts if not contact.archived and not _is_status(contact.status, ContactStatus.archived)]
         return sorted(contacts, key=lambda contact: contact.updated_at, reverse=True)
 
     def contacts_page(
@@ -448,8 +461,8 @@ class CRM:
         return {
             "companies": len(self.companies()),
             "contacts": len(contacts),
-            "active_customers": len([contact for contact in contacts if contact.status == "active_customer"]),
-            "leads": len([contact for contact in contacts if contact.status == "lead"]),
+            "active_customers": len([contact for contact in contacts if _is_status(contact.status, ContactStatus.active_customer)]),
+            "leads": len([contact for contact in contacts if _is_status(contact.status, ContactStatus.lead)]),
             "open_tasks": len([task for task in all_tasks if not task.completed]),
             "completed_tasks": len([task for task in all_tasks if task.completed]),
             "overdue_tasks": len(self.overdue_tasks(today)),
@@ -459,7 +472,7 @@ class CRM:
         self,
         query: str = "",
         company: Company | None = None,
-        status: str | None = None,
+        status: object | None = None,
         tag: str | None = None,
         task_filter: str = TASK_FILTER_ALL,
         include_archived: bool = False,
@@ -470,7 +483,7 @@ class CRM:
         normalized_query = query.strip().lower()
         result = []
         for contact in candidates:
-            if not include_archived and (contact.archived or contact.status == "archived"):
+            if not include_archived and (contact.archived or _is_status(contact.status, ContactStatus.archived)):
                 continue
             if task_filter == TASK_FILTER_OPEN and not contact.open_tasks():
                 continue
@@ -487,7 +500,7 @@ class CRM:
         self,
         query: str = "",
         company: Company | None = None,
-        status: str | None = None,
+        status: object | None = None,
         tag: str | None = None,
         task_filter: str = TASK_FILTER_ALL,
         include_archived: bool = False,
@@ -512,7 +525,7 @@ class CRM:
     def _indexed_candidates(
         self,
         company: Company | None,
-        status: str | None,
+        status: object | None,
         tag: str | None,
         include_archived: bool,
     ) -> set[Contact]:
@@ -520,7 +533,7 @@ class CRM:
         if company is not None:
             candidate_sets.append(set(self.contacts_by_company.get(self._company_index_key(company), [])))
         if status:
-            candidate_sets.append(set(self.contacts_by_status.get(_check_status(status), [])))
+            candidate_sets.append(set(self.contacts_by_status.get(_status_key(status), [])))
         if tag:
             clean_tag = tag.strip().lower()
             candidate_sets.append(set(self.contacts_by_tag.get(clean_tag, [])))
@@ -531,7 +544,7 @@ class CRM:
     def _index_contact(self, contact: Contact) -> None:
         if contact.company is not None:
             self._dict_list_add(self.contacts_by_company, self._company_index_key(contact.company), contact)
-        self._dict_list_add(self.contacts_by_status, contact.status, contact)
+        self._dict_list_add(self.contacts_by_status, _status_key(contact.status), contact)
         for tag in contact.tags:
             self._dict_list_add(self.contacts_by_tag, tag, contact)
         if contact.next_task_due_at is not None:

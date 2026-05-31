@@ -84,8 +84,8 @@ def format_date(value: date | datetime | None) -> str:
     return value.strftime("%Y-%m-%d")
 
 
-def status_label(status: str) -> str:
-    return status.replace("_", " ").title()
+def status_label(status: object) -> str:
+    return str(status).replace("_", " ").title()
 
 
 def task_filter_from_label(label: str) -> str:
@@ -344,7 +344,7 @@ def crm_page() -> None:
             return ("Overdue", "crm-chip-overdue", "text-red-700")
         return ("Open", "crm-chip-open", "text-amber-700")
 
-    def status_chip(status: str) -> None:
+    def status_chip(status: object) -> None:
         ui.label(status_label(status)).classes("crm-chip crm-chip-status")
 
     def refresh_metrics() -> None:
@@ -372,7 +372,7 @@ def crm_page() -> None:
                 "w-[320px] max-w-full"
             )
 
-    def show_contacts(status: str | None = None) -> None:
+    def show_contacts(status: object | None = None) -> None:
         state["list_view"] = "contacts"
         state["selected_task"] = None
         state["query"] = ""
@@ -460,7 +460,7 @@ def crm_page() -> None:
             ui.select(
                 status_options,
                 label="Status",
-                value=status_label(current_status) if isinstance(current_status, str) else "All statuses",
+                value=status_label(current_status) if current_status is not None else "All statuses",
                 on_change=lambda e: update_status(e.value),
             ).props("dense outlined").classes("w-full")
 
@@ -540,7 +540,7 @@ def crm_page() -> None:
         page_result = crm.search_contacts_page(
             query=str(state["query"]),
             company=state["company"] if state["company"] is not None else None,
-            status=state["status"] if isinstance(state["status"], str) else None,
+            status=state["status"] if state["status"] is not None else None,
             tag=state["tag"] if isinstance(state["tag"], str) else None,
             task_filter=str(state["task_filter"]),
             page=int(state["page"]),
