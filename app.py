@@ -259,6 +259,43 @@ def crm_page() -> None:
         .crm-action .q-btn {
             border-radius: 8px;
         }
+        .q-btn {
+            border-radius: 8px;
+            font-weight: 700;
+            letter-spacing: 0;
+        }
+        .q-btn.bg-primary {
+            background: var(--crm-primary-dark) !important;
+            color: #ffffff !important;
+            box-shadow: 0 8px 18px rgba(30, 58, 95, 0.16);
+        }
+        .q-btn.bg-primary:hover {
+            background: #172f4f !important;
+        }
+        .q-btn.text-primary,
+        .q-btn.text-positive,
+        a,
+        .q-item.q-router-link--active {
+            color: var(--crm-primary-dark) !important;
+        }
+        .q-btn.q-btn--outline.text-primary::before {
+            border-color: rgba(30, 58, 95, 0.56) !important;
+        }
+        .q-btn.text-primary:hover,
+        .q-btn.text-positive:hover {
+            background: rgba(30, 58, 95, 0.07) !important;
+        }
+        .q-btn.bg-positive {
+            background: var(--crm-primary-dark) !important;
+            color: #ffffff !important;
+        }
+        .q-btn.text-negative {
+            color: var(--crm-danger) !important;
+        }
+        .q-btn.bg-negative {
+            background: var(--crm-danger) !important;
+            color: #ffffff !important;
+        }
         .crm-header-search .q-field__control,
         .crm-panel .q-field__control,
         .crm-dialog-card .q-field__control {
