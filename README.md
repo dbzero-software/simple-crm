@@ -100,17 +100,32 @@ reuses existing records instead of duplicating the demo CRM.
 | Manual cache layer | dbzero caching behavior |
 | Separate audit subsystem | Not included in the main tutorial workflow |
 
-This is not the right stack for every app. Separate frontends, explicit APIs,
-relational databases, queues, and deployment automation are still appropriate
-for many systems. This tutorial focuses on small Python-first internal tools
-where fewer layers make the app easier to build and inspect.
+This stack is useful beyond toy demos and small prototypes. For many
+Python-first internal tools, dashboards, operations apps, workflow trackers, and
+stateful team utilities, NiceGUI plus dbzero can replace much of the classic
+frontend/API/ORM/database-server stack with direct Python objects and a compact
+browser UI.
+
+That smaller surface area is also a practical advantage for AI coding agents:
+there are fewer layers to coordinate, fewer generated interfaces to keep in
+sync, and more of the application behavior is visible in ordinary Python code.
+
+It is still not universal. Explicit APIs, relational databases, separate
+frontends, external queues, and deployment automation remain appropriate when
+the product needs their boundaries, scale characteristics, integrations, or
+operational controls.
 
 ## Browser Verification
 
-The dev test suite includes a Playwright smoke test for the browser workflow.
-It starts the app with an isolated temporary `.dbzero` root, seeds data, opens a
-contact, adds a note and task, and completes/reopens the task.
+The test suite includes a Playwright smoke test that starts the app with an
+isolated temporary `.dbzero` root, seeds sample data, opens a contact, adds a
+note and task, and completes/reopens the task.
 
-If the local machine is missing Chromium system libraries, pytest skips only
-that browser test and reports the missing dependency. On a fully provisioned
-machine, `python -m pytest -q` runs it with the rest of the suite.
+Run it with the rest of the suite:
+
+```bash
+python -m pytest -q
+```
+
+If Chromium system libraries are missing, pytest skips only the browser test and
+reports the missing dependency.
