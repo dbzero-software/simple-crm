@@ -13,7 +13,7 @@ from nicegui import ui
 
 from simple_crm.config import DATA_PREFIX, DEFAULT_DBZERO_ROOT
 from simple_crm.models import (
-    CONTACT_STATUSES,
+    ContactStatus,
     CRM,
     Company,
     Contact,
@@ -393,8 +393,8 @@ def crm_page() -> None:
         metrics = [
             ("Companies", counts["companies"], "#ffffff", show_companies),
             ("Contacts", counts["contacts"], "#ffffff", lambda: show_contacts()),
-            ("Active", counts["active_customers"], "#f8fafc", lambda: show_contacts(status="active_customer")),
-            ("Leads", counts["leads"], "#f8fafc", lambda: show_contacts(status="lead")),
+            ("Active", counts["active_customers"], "#f8fafc", lambda: show_contacts(status=ContactStatus.active_customer)),
+            ("Leads", counts["leads"], "#f8fafc", lambda: show_contacts(status=ContactStatus.lead)),
             ("Open tasks total", counts["open_tasks"], "#eaf1ff", lambda: show_tasks(TASK_FILTER_OPEN)),
             ("Overdue", counts["overdue_tasks"], "#fff1f2", lambda: show_tasks(TASK_FILTER_OVERDUE)),
         ]
@@ -459,7 +459,6 @@ def crm_page() -> None:
         reset_page()
         if state["list_view"] != "companies":
             state["list_view"] = "contacts"
-            refresh_header_search()
         refresh_contact_list()
 
     def refresh_filters() -> None:
@@ -485,12 +484,12 @@ def crm_page() -> None:
                 "dense outlined"
             ).classes("w-full")
 
-            status_options = ["All statuses", *[status_label(status) for status in CONTACT_STATUSES]]
+            status_options = ["All statuses", *[status_label(status) for status in ContactStatus.values()]]
 
             def update_status(label: str) -> None:
                 state["list_view"] = "contacts"
                 state["selected_task"] = None
-                reverse = {status_label(status): status for status in CONTACT_STATUSES}
+                reverse = {status_label(status): status for status in ContactStatus.values()}
                 state["status"] = reverse.get(label)
                 reset_page()
                 refresh_header_search()
@@ -545,18 +544,18 @@ def crm_page() -> None:
             title_input = ui.input("Title").props("dense outlined").classes("w-full")
             contact_company_options = company_options()
             company_select = ui.select(list(contact_company_options.keys()), label="Company", value="No company").props("dense outlined").classes("w-full")
-            status_select = ui.select([status_label(status) for status in CONTACT_STATUSES], label="Status", value="Lead").props("dense outlined").classes("w-full")
+            status_select = ui.select([status_label(status) for status in ContactStatus.values()], label="Status", value="Lead").props("dense outlined").classes("w-full")
             tags_input = ui.input("Tags").props("dense outlined").classes("w-full")
 
             def create_contact() -> None:
                 try:
-                    reverse_status = {status_label(status): status for status in CONTACT_STATUSES}
+                    reverse_status = {status_label(status): status for status in ContactStatus.values()}
                     contact = crm.add_contact(
                         name_input.value or "",
                         email_input.value or "",
                         title_input.value or "",
                         contact_company_options.get(company_select.value),
-                        reverse_status.get(status_select.value, "lead"),
+                        reverse_status[status_select.value],
                         tags_input.value or "",
                     )
                 except ValueError as exc:
@@ -664,15 +663,18 @@ def crm_page() -> None:
 
     def render_task_list(task_filter: str) -> None:
         today = date.today()
-        page_result = crm.task_rows_page(task_filter, today=today, page=int(state["page"]), page_size=int(state["page_size"]))
-        rows = page_result.items
+        page_result = crm.tasks_page(task_filter, today=today, page=int(state["page"]), page_size=int(state["page_size"]))
+        tasks = page_result.items
         label = "overdue tasks" if task_filter == TASK_FILTER_OVERDUE else "open tasks"
         with list_container:
             render_list_heading(f"{page_result.total} {label}")
-            if not rows:
+            if not tasks:
                 ui.label(f"No {label}.").classes("crm-empty w-full p-4 text-sm text-gray-500")
                 return
-            for contact, task in rows:
+            for task in tasks:
+                contact = task.contact
+                if contact is None:
+                    continue
                 task_label, task_chip_class, color = task_status(task)
                 company_name = contact.company.name if contact.company else "No company"
                 with ui.column().classes("crm-row w-full p-4 gap-2"):
@@ -781,13 +783,13 @@ def crm_page() -> None:
         with ui.column().classes("crm-panel w-full p-4 gap-3"):
             ui.label("Relationship").classes("crm-section-title")
             status_select = ui.select(
-                [status_label(status) for status in CONTACT_STATUSES],
+                [status_label(status) for status in ContactStatus.values()],
                 label="Relationship status",
                 value=status_label(contact.status),
             ).props("dense outlined").classes("w-full")
 
             def save_status() -> None:
-                reverse_status = {status_label(status): status for status in CONTACT_STATUSES}
+                reverse_status = {status_label(status): status for status in ContactStatus.values()}
                 crm.change_contact_status(contact, reverse_status[status_select.value])
                 refresh_all()
 
@@ -828,9 +830,13 @@ def crm_page() -> None:
             if not contact.notes:
                 ui.label("No notes yet.").classes("text-sm text-slate-500 italic")
             for note in sorted(contact.notes, key=lambda item: item.created_at, reverse=True):
-                with ui.column().classes("crm-note w-full p-3 gap-1"):
-                    ui.label(format_date(note.created_at)).classes("text-xs text-slate-500")
-                    ui.label(note.body).classes("text-sm text-slate-800")
+                with ui.row().classes("crm-note w-full items-start justify-between gap-3 p-3"):
+                    with ui.column().classes("gap-1 min-w-0"):
+                        ui.label(format_date(note.created_at)).classes("text-xs text-slate-500")
+                        ui.label(note.body).classes("text-sm text-slate-800")
+                    ui.button(icon="delete", on_click=lambda _, n=note: confirm_remove_note(contact, n)).props(
+                        "flat dense round size=sm color=grey-8"
+                    ).tooltip("Delete note")
 
     def render_task_panel(contact: Contact) -> None:
         with ui.column().classes("crm-panel w-full p-4 gap-3"):
@@ -868,6 +874,24 @@ def crm_page() -> None:
 
     def remove_tag(contact: Contact, tag: str) -> None:
         crm.remove_contact_tag(contact, tag)
+        refresh_all()
+
+    def confirm_remove_note(contact: Contact, note) -> None:
+        with ui.dialog() as dialog, ui.card().classes("crm-dialog-card w-[420px] max-w-full"):
+            ui.label("Delete note?").classes("text-lg font-semibold")
+            ui.label("This note will be removed from the contact.").classes("text-sm text-slate-600")
+            with ui.row().classes("w-full justify-end gap-2"):
+                ui.button("Cancel", on_click=dialog.close).props("flat")
+
+                def delete_confirmed() -> None:
+                    dialog.close()
+                    remove_note(contact, note)
+
+                ui.button("Delete", icon="delete", on_click=delete_confirmed).props("color=negative unelevated")
+        dialog.open()
+
+    def remove_note(contact: Contact, note) -> None:
+        crm.remove_note(contact, note)
         refresh_all()
 
     def complete_task(contact: Contact, task) -> None:

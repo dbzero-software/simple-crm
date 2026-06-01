@@ -1,47 +1,73 @@
 from datetime import date, timedelta
 
-from simple_crm.models import ContactStatus, TASK_FILTER_OPEN, TASK_FILTER_OVERDUE
+import dbzero as db0
+
+from simple_crm.models import (
+    CONTACT_TAG_PREFIX,
+    TASK_TAG_ARCHIVED_CONTACT,
+    ContactStatus,
+    TASK_FILTER_OPEN,
+    TASK_FILTER_OVERDUE,
+    Task,
+)
 from simple_crm.seed import seed_sample_data
 
 
 def test_search_filters_by_company_status_tag_and_text(crm):
     northstar = crm.add_company("Northstar Analytics", "Analytics", "https://northstar.example")
     harbor = crm.add_company("Harbor Clinic", "Healthcare", "https://harbor.example")
-    avery = crm.add_contact("Avery Stone", "avery@northstar.example", "Founder", northstar, "lead", "lead,technical")
-    jon = crm.add_contact("Jon Bell", "jon@harbor.example", "Operations Director", harbor, "active_customer", "customer,renewal")
+    avery = crm.add_contact("Avery Stone", "avery@northstar.example", "Founder", northstar, ContactStatus.lead, "lead,technical")
+    jon = crm.add_contact(
+        "Jon Bell",
+        "jon@harbor.example",
+        "Operations Director",
+        harbor,
+        ContactStatus.active_customer,
+        "customer,renewal",
+    )
     crm.add_note(avery, "Needs pricing details for analytics rollout.")
     crm.add_note(jon, "Renewal date confirmed with operations.")
 
-    assert crm.search_contacts(company=northstar) == [avery]
-    assert crm.search_contacts(status="active_customer") == [jon]
-    assert crm.search_contacts(tag="technical") == [avery]
-    assert crm.search_contacts(query="renewal") == [jon]
-    assert crm.search_contacts(query="northstar") == [avery]
-    assert crm.contacts_by_company[northstar] == [avery]
-    assert crm.contacts_by_status[ContactStatus.active_customer] == [jon]
+    assert list(crm.search_contacts(company=northstar)) == [avery]
+    assert list(crm.search_contacts(status=ContactStatus.active_customer)) == [jon]
+    assert list(crm.search_contacts(tag="technical")) == [avery]
+    assert list(crm.search_contacts(query="renewal")) == [jon]
+    assert list(crm.search_contacts(query="northstar")) == [avery]
+    assert list(db0.find(ContactStatus.active_customer)) == [jon]
+    assert list(db0.find(db0.as_tag(northstar))) == [avery]
+    assert list(db0.find(f"{CONTACT_TAG_PREFIX}technical")) == [avery]
 
 
-def test_contact_status_uses_dbzero_enum_with_string_inputs(crm):
-    contact = crm.add_contact("Avery Stone", status="lead")
+def test_contact_status_uses_dbzero_enum_values(crm):
+    contact = crm.add_contact("Avery Stone", status=ContactStatus.lead)
 
     assert contact.status == ContactStatus.lead
     assert contact.status != "lead"
-    assert crm.search_contacts(status="lead") == [contact]
+    assert list(crm.search_contacts(status=ContactStatus.lead)) == [contact]
 
     crm.change_contact_status(contact, ContactStatus.active_customer)
 
     assert contact.status == ContactStatus.active_customer
-    assert crm.search_contacts(status="active_customer") == [contact]
+    assert list(crm.search_contacts(status=ContactStatus.active_customer)) == [contact]
     assert crm.counts()["active_customers"] == 1
+
+
+def test_contact_status_rejects_strings(crm):
+    try:
+        crm.add_contact("Avery Stone", status="lead")
+    except ValueError as exc:
+        assert str(exc) == "Unknown contact status: 'lead'"
+    else:
+        raise AssertionError("string contact status should be rejected")
 
 
 def test_search_companies_filters_by_company_text(crm):
     northstar = crm.add_company("Northstar Analytics", "Analytics", "https://northstar.example")
     harbor = crm.add_company("Harbor Clinic", "Healthcare", "https://harbor.example")
 
-    assert crm.search_companies("analytics") == [northstar]
-    assert crm.search_companies("healthcare") == [harbor]
-    assert crm.search_companies("example") == [harbor, northstar]
+    assert list(crm.search_companies("analytics")) == [northstar]
+    assert list(crm.search_companies("healthcare")) == [harbor]
+    assert list(crm.search_companies("example")) == [northstar, harbor]
 
 
 def test_paged_company_search_uses_requested_window(crm):
@@ -60,7 +86,7 @@ def test_paged_company_search_uses_requested_window(crm):
 
 def test_paged_contact_search_returns_metadata(crm):
     for index in range(12):
-        crm.add_contact(f"Contact {index:02d}", status="lead")
+        crm.add_contact(f"Contact {index:02d}", status=ContactStatus.lead)
 
     page = crm.search_contacts_page(page=2, page_size=5)
 
@@ -73,14 +99,32 @@ def test_paged_contact_search_returns_metadata(crm):
     assert page.has_next
 
 
+def test_contact_retrieval_is_iterable_and_sorted_by_updated_index(crm):
+    avery = crm.add_contact("Avery Stone", status=ContactStatus.lead)
+    grace = crm.add_contact("Grace Kim", status=ContactStatus.lead)
+
+    contacts = crm.search_contacts(status=ContactStatus.lead)
+    companies = crm.search_companies()
+
+    assert not isinstance(contacts, list)
+    assert not isinstance(companies, list)
+    assert list(contacts) == [grace, avery]
+
+    crm.add_note(avery, "Recent follow-up note.")
+
+    assert list(crm.search_contacts(status=ContactStatus.lead)) == [avery, grace]
+
+
 def test_task_state_filters_and_archived_default(crm):
-    active = crm.add_contact("Sam Chen", status="lead", tags="lead")
-    archived = crm.add_contact("Lena Ortiz", status="inactive", tags="finance")
+    active = crm.add_contact("Sam Chen", status=ContactStatus.lead, tags="lead")
+    archived = crm.add_contact("Lena Ortiz", status=ContactStatus.inactive, tags="finance")
     open_task = crm.add_task(active, "Send pricing follow-up", date.today() + timedelta(days=3))
     overdue_task = crm.add_task(active, "Check contract status", date.today() - timedelta(days=2))
-    crm.add_task(archived, "Old task", date.today() - timedelta(days=5))
+    archived_task = crm.add_task(archived, "Old task", date.today() - timedelta(days=5))
     crm.archive_contact(archived)
 
+    assert list(db0.find(Task, TASK_TAG_ARCHIVED_CONTACT)) == [archived_task]
+    assert crm.counts()["open_tasks"] == 2
     assert active in crm.search_contacts(task_filter=TASK_FILTER_OPEN)
     assert active in crm.search_contacts(task_filter=TASK_FILTER_OVERDUE)
     assert archived not in crm.search_contacts(query="Lena")
@@ -139,8 +183,8 @@ def test_update_contact_basics_moves_company_filter(crm):
 
     crm.update_contact_basics(contact, "Avery Stone", "avery@harbor.example", "Advisor", harbor)
 
-    assert crm.search_contacts(company=northstar) == []
-    assert crm.search_contacts(company=harbor) == [contact]
+    assert list(crm.search_contacts(company=northstar)) == []
+    assert list(crm.search_contacts(company=harbor)) == [contact]
     assert contact.email == "avery@harbor.example"
     assert contact.title == "Advisor"
 
@@ -151,5 +195,5 @@ def test_remove_contact_tag_updates_contact_and_tag_filter(crm):
     crm.remove_contact_tag(contact, "technical")
 
     assert contact.tags == {"lead"}
-    assert crm.search_contacts(tag="technical") == []
-    assert crm.search_contacts(tag="lead") == [contact]
+    assert list(crm.search_contacts(tag="technical")) == []
+    assert list(crm.search_contacts(tag="lead")) == [contact]

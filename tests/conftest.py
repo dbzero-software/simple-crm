@@ -17,4 +17,3 @@ def crm(tmp_path):
         yield root
     finally:
         db0.close()
-

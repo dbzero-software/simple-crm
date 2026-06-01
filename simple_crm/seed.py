@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from simple_crm.models import CRM, Company, Contact
+from simple_crm.models import CRM, Company, Contact, ContactStatus
 
 
 def seed_sample_data(crm: CRM, today: date | None = None) -> dict[str, int]:
@@ -31,18 +31,18 @@ def seed_sample_data(crm: CRM, today: date | None = None) -> dict[str, int]:
         companies[name] = crm.add_company(name, industry, website)
 
     specs = [
-        ("Avery Stone", "avery@northstar.example", "Founder", companies["Northstar Analytics"], "lead", "lead,technical,needs-follow-up"),
-        ("Mina Patel", "mina@northstar.example", "Data Lead", companies["Northstar Analytics"], "prospect", "prospect,technical"),
-        ("Jon Bell", "jon@harbor.example", "Operations Director", companies["Harbor Clinic"], "active_customer", "customer,renewal"),
-        ("Elena Ruiz", "elena@harbor.example", "Clinic Manager", companies["Harbor Clinic"], "partner", "partner,finance"),
-        ("Sam Chen", "sam@circuit.example", "VP Sales", companies["Circuit Supply"], "lead", "lead,finance"),
-        ("Priya Shah", "priya@circuit.example", "Implementation Lead", companies["Circuit Supply"], "prospect", "prospect,technical"),
-        ("Noah Brooks", "noah@meadow.example", "Owner", companies["Meadow Foods"], "active_customer", "customer,renewal"),
-        ("Lena Ortiz", "lena@meadow.example", "Finance Manager", companies["Meadow Foods"], "inactive", "finance"),
-        ("Theo Martin", "theo@atlas.example", "Partner", companies["Atlas Legal"], "partner", "partner,customer"),
-        ("Grace Kim", "grace@atlas.example", "IT Manager", companies["Atlas Legal"], "prospect", "prospect,technical,needs-follow-up"),
-        ("Iris Walker", "iris@example.com", "Independent Consultant", None, "lead", "lead,needs-follow-up"),
-        ("Marco Silva", "marco@example.com", "Advisor", None, "inactive", "partner"),
+        ("Avery Stone", "avery@northstar.example", "Founder", companies["Northstar Analytics"], ContactStatus.lead, "lead,technical,needs-follow-up"),
+        ("Mina Patel", "mina@northstar.example", "Data Lead", companies["Northstar Analytics"], ContactStatus.prospect, "prospect,technical"),
+        ("Jon Bell", "jon@harbor.example", "Operations Director", companies["Harbor Clinic"], ContactStatus.active_customer, "customer,renewal"),
+        ("Elena Ruiz", "elena@harbor.example", "Clinic Manager", companies["Harbor Clinic"], ContactStatus.partner, "partner,finance"),
+        ("Sam Chen", "sam@circuit.example", "VP Sales", companies["Circuit Supply"], ContactStatus.lead, "lead,finance"),
+        ("Priya Shah", "priya@circuit.example", "Implementation Lead", companies["Circuit Supply"], ContactStatus.prospect, "prospect,technical"),
+        ("Noah Brooks", "noah@meadow.example", "Owner", companies["Meadow Foods"], ContactStatus.active_customer, "customer,renewal"),
+        ("Lena Ortiz", "lena@meadow.example", "Finance Manager", companies["Meadow Foods"], ContactStatus.inactive, "finance"),
+        ("Theo Martin", "theo@atlas.example", "Partner", companies["Atlas Legal"], ContactStatus.partner, "partner,customer"),
+        ("Grace Kim", "grace@atlas.example", "IT Manager", companies["Atlas Legal"], ContactStatus.prospect, "prospect,technical,needs-follow-up"),
+        ("Iris Walker", "iris@example.com", "Independent Consultant", None, ContactStatus.lead, "lead,needs-follow-up"),
+        ("Marco Silva", "marco@example.com", "Advisor", None, ContactStatus.inactive, "partner"),
     ]
 
     contacts: list[Contact] = []
@@ -58,7 +58,7 @@ def seed_sample_data(crm: CRM, today: date | None = None) -> dict[str, int]:
                 crm.add_contact_tag(contact, tag)
         note_body = f"Initial discovery conversation with {name}."
         if all(note.body != note_body for note in contact.notes):
-            contact.add_note(note_body)
+            crm.add_note(contact, note_body)
         contacts.append(contact)
 
     task_specs = [
