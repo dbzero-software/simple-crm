@@ -16,17 +16,15 @@ ContactStatus = db0.enum(
     values=["lead", "prospect", "active_customer", "partner", "inactive", "archived"],
 )
 ContactStatusValue = type(ContactStatus.lead)
+TaskState = db0.enum("TaskState", values=["open", "completed"])
+TaskVisibility = db0.enum("TaskVisibility", values=["active_contact", "archived_contact"])
+ContactOpenTaskState = db0.enum("ContactOpenTaskState", values=["none", "has_open"])
 
 
 TASK_FILTER_ALL = "all"
 TASK_FILTER_OPEN = "open"
 TASK_FILTER_OVERDUE = "overdue"
 CONTACT_TAG_PREFIX = "contact-tag:"
-CONTACT_TAG_HAS_OPEN_TASK = "contact:has-open-task"
-CONTACT_TAG_NO_RESULTS = "contact:no-results"
-TASK_TAG_OPEN = "task:open"
-TASK_TAG_COMPLETED = "task:completed"
-TASK_TAG_ARCHIVED_CONTACT = "task:archived-contact"
 
 
 def _normalize_tags(tags: Iterable[str] | str | None) -> set[str]:
@@ -39,23 +37,16 @@ def _normalize_tags(tags: Iterable[str] | str | None) -> set[str]:
     return {tag.strip().lower() for tag in raw_tags if tag and tag.strip()}
 
 
-def _ensure_status(status: object) -> None:
-    if status not in ContactStatus.values():
-        raise ValueError(f"Unknown contact status: {status!r}")
+def _resolve_status(status: object) -> ContactStatusValue:
+    for value in ContactStatus.values():
+        if value == status:
+            return value
+    raise ValueError(f"Unknown contact status: {status!r}")
 
 
-def _status_tag_value(status: ContactStatusValue) -> str:
-    return str(status)
-
-
-def _task_state_value(completed: bool) -> str:
-    return TASK_TAG_COMPLETED if completed else TASK_TAG_OPEN
-
-
-def _archived_contact_tag(contact: Contact | None) -> str | None:
-    if contact is not None and (contact.archived or contact.status == ContactStatus.archived):
-        return TASK_TAG_ARCHIVED_CONTACT
-    return None
+def _task_visibility(contact: Contact | None):
+    TaskVisibility.values()
+    return TaskVisibility.archived_contact if contact is not None and contact.archived else TaskVisibility.active_contact
 
 
 @db0.memo(prefix=DATA_PREFIX)
@@ -80,7 +71,7 @@ class Note:
 
 
 @db0.memo(prefix=DATA_PREFIX)
-@db0.tag_fields("contact", "task_state", "archived_contact_tag")
+@db0.tag_fields("contact", "state", "visibility")
 @dataclass(eq=False)
 class Task:
     """A follow-up task attached to one contact."""
@@ -88,16 +79,20 @@ class Task:
     title: str
     due_date: date | None = None
     description: str = ""
-    completed: bool = False
-    task_state: str = TASK_TAG_OPEN
-    archived_contact_tag: str | None = None
+    state: object | None = None
+    visibility: object | None = None
     created_at: datetime = field(default_factory=datetime.now)
     completed_at: datetime | None = None
     contact: Contact | None = None
 
     def __post_init__(self) -> None:
-        self.task_state = _task_state_value(self.completed)
-        self.archived_contact_tag = _archived_contact_tag(self.contact)
+        TaskState.values()
+        self.state = self.state or TaskState.open
+        self.visibility = _task_visibility(self.contact)
+
+    @property
+    def completed(self) -> bool:
+        return self.state == TaskState.completed
 
     def is_overdue(self, today: date | None = None) -> bool:
         today = today or date.today()
@@ -105,19 +100,17 @@ class Task:
 
     def complete(self) -> None:
         if not self.completed:
-            self.completed = True
-            self.task_state = _task_state_value(self.completed)
+            self.state = TaskState.completed
             self.completed_at = datetime.now()
 
     def reopen(self) -> None:
         if self.completed:
-            self.completed = False
-            self.task_state = _task_state_value(self.completed)
+            self.state = TaskState.open
             self.completed_at = None
 
 
 @db0.memo(prefix=DATA_PREFIX)
-@db0.tag_fields("status_tag", "company", "open_task_tag")
+@db0.tag_fields("status", "company", "open_task_state")
 @dataclass(eq=False)
 class Contact:
     """A person tracked in the CRM."""
@@ -127,12 +120,10 @@ class Contact:
     title: str = ""
     company: Company | None = None
     status: ContactStatusValue = ContactStatus.lead
-    status_tag: str = "lead"
     tags: set[str] = field(default_factory=set)
     notes: list[Note] = field(default_factory=list)
     tasks: list[Task] = field(default_factory=list)
-    archived: bool = False
-    open_task_tag: str | None = None
+    open_task_state: object | None = None
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
 
@@ -140,10 +131,14 @@ class Contact:
         self.name = self.name.strip()
         self.email = self.email.strip()
         self.title = self.title.strip()
-        _ensure_status(self.status)
-        self.status_tag = _status_tag_value(self.status)
+        self.status = _resolve_status(self.status)
         self.tags = _normalize_tags(self.tags)
-        self.open_task_tag = CONTACT_TAG_HAS_OPEN_TASK if self.open_tasks() else None
+        ContactOpenTaskState.values()
+        self.open_task_state = ContactOpenTaskState.has_open if self.open_tasks() else ContactOpenTaskState.none
+
+    @property
+    def archived(self) -> bool:
+        return self.status == ContactStatus.archived
 
     @property
     def last_touch_at(self) -> datetime | None:
@@ -181,10 +176,7 @@ class Contact:
         self.updated_at = datetime.now()
 
     def change_status(self, status: ContactStatusValue) -> None:
-        _ensure_status(status)
-        self.status = status
-        self.status_tag = _status_tag_value(status)
-        self.archived = status == ContactStatus.archived
+        self.status = _resolve_status(status)
         self.updated_at = datetime.now()
 
     def add_note(self, body: str) -> Note:
@@ -274,6 +266,7 @@ class CRM:
         clean_name = name.strip()
         if not clean_name:
             raise ValueError("Contact name is required.")
+        status = _resolve_status(status)
         contact = Contact(clean_name, email.strip(), title.strip(), company, status, tags=_normalize_tags(tags))
         self._index_contact(contact)
         return contact
@@ -295,7 +288,7 @@ class CRM:
         old_updated_at = contact.updated_at
         contact.change_status(status)
         if old_status != contact.status:
-            self._sync_contact_tasks_for_archive_state(contact)
+            self._sync_contact_task_visibility(contact)
         self._reindex_contact_updated_at(contact, old_updated_at)
 
     def archive_contact(self, contact: Contact) -> None:
@@ -384,8 +377,7 @@ class CRM:
         return paginate(self.search_companies(query), page, page_size)
 
     def contacts(self, include_archived: bool = False):
-        archived_tag = _status_tag_value(ContactStatus.archived)
-        contact_query = db0.find(Contact) if include_archived else db0.find(Contact, db0.no(archived_tag))
+        contact_query = db0.find(Contact) if include_archived else db0.find(Contact, db0.no(ContactStatus.archived))
         return self.contacts_by_updated_at.sort(contact_query, desc=True)
 
     def contacts_page(
@@ -407,8 +399,8 @@ class CRM:
 
     def overdue_tasks(self, today: date | None = None):
         today = today or date.today()
-        overdue_query = db0.find(Task, TASK_TAG_OPEN, self.tasks_by_due_date.select(None, today - timedelta(days=1)))
-        return db0.find(overdue_query, db0.no(TASK_TAG_ARCHIVED_CONTACT))
+        due_range = self.tasks_by_due_date.select(None, today - timedelta(days=1))
+        return db0.find(Task, TaskState.open, TaskVisibility.active_contact, due_range)
 
     def task_rows(
         self,
@@ -429,25 +421,13 @@ class CRM:
 
     def counts(self, today: date | None = None) -> dict[str, int]:
         contacts = self.contacts()
-        open_tasks = db0.find(Task, TASK_TAG_OPEN, db0.no(TASK_TAG_ARCHIVED_CONTACT))
-        completed_tasks = db0.find(Task, TASK_TAG_COMPLETED, db0.no(TASK_TAG_ARCHIVED_CONTACT))
+        open_tasks = db0.find(Task, TaskState.open, TaskVisibility.active_contact)
+        completed_tasks = db0.find(Task, TaskState.completed, TaskVisibility.active_contact)
         return {
             "companies": len(self.companies()),
             "contacts": len(contacts),
-            "active_customers": len(
-                db0.find(
-                    Contact,
-                    _status_tag_value(ContactStatus.active_customer),
-                    db0.no(_status_tag_value(ContactStatus.archived)),
-                )
-            ),
-            "leads": len(
-                db0.find(
-                    Contact,
-                    _status_tag_value(ContactStatus.lead),
-                    db0.no(_status_tag_value(ContactStatus.archived)),
-                )
-            ),
+            "active_customers": len(db0.find(Contact, ContactStatus.active_customer, db0.no(ContactStatus.archived))),
+            "leads": len(db0.find(Contact, ContactStatus.lead, db0.no(ContactStatus.archived))),
             "open_tasks": len(open_tasks),
             "completed_tasks": len(completed_tasks),
             "overdue_tasks": len(self.overdue_tasks(today)),
@@ -511,21 +491,20 @@ class CRM:
     ):
         criteria: list[object] = [Contact]
         if not include_archived:
-            criteria.append(db0.no(_status_tag_value(ContactStatus.archived)))
+            criteria.append(db0.no(ContactStatus.archived))
         if company is not None:
             criteria.append(db0.as_tag(company))
         if status:
-            _ensure_status(status)
-            criteria.append(_status_tag_value(status))
+            criteria.append(_resolve_status(status))
         if tag:
             clean_tag = tag.strip().lower()
             criteria.append(self._contact_tag_key(clean_tag))
         if task_filter == TASK_FILTER_OPEN:
-            criteria.append(CONTACT_TAG_HAS_OPEN_TASK)
+            criteria.append(ContactOpenTaskState.has_open)
         elif task_filter == TASK_FILTER_OVERDUE:
             overdue_contacts = db0.find(Contact, self.contacts_by_next_task_date.select(None, today - timedelta(days=1)))
             if not overdue_contacts:
-                return db0.find(Contact, CONTACT_TAG_NO_RESULTS)
+                return overdue_contacts
             criteria.append(overdue_contacts)
         return db0.find(*criteria)
 
@@ -533,10 +512,9 @@ class CRM:
         if task_filter not in {TASK_FILTER_OPEN, TASK_FILTER_OVERDUE}:
             raise ValueError(f"Unknown task filter: {task_filter!r}")
         today = today or date.today()
-        task_query = db0.find(Task, TASK_TAG_OPEN, db0.no(TASK_TAG_ARCHIVED_CONTACT))
+        task_query = db0.find(Task, TaskState.open, TaskVisibility.active_contact)
         if task_filter == TASK_FILTER_OVERDUE:
-            overdue_query = db0.find(Task, TASK_TAG_OPEN, self.tasks_by_due_date.select(None, today - timedelta(days=1)))
-            task_query = db0.find(overdue_query, db0.no(TASK_TAG_ARCHIVED_CONTACT))
+            task_query = db0.find(task_query, self.tasks_by_due_date.select(None, today - timedelta(days=1)))
         return self.tasks_by_due_date.sort(self.tasks_by_created_at.sort(task_query))
 
     def _index_contact(self, contact: Contact) -> None:
@@ -555,7 +533,8 @@ class CRM:
         return ((task.contact, task) for task in tasks if task.contact is not None)
 
     def _sync_contact_open_task_state(self, contact: Contact) -> None:
-        contact.open_task_tag = CONTACT_TAG_HAS_OPEN_TASK if contact.open_tasks() else None
+        ContactOpenTaskState.values()
+        contact.open_task_state = ContactOpenTaskState.has_open if contact.open_tasks() else ContactOpenTaskState.none
 
     def _reindex_contact_updated_at(self, contact: Contact, old_updated_at: datetime) -> None:
         if old_updated_at == contact.updated_at:
@@ -563,9 +542,9 @@ class CRM:
         self.contacts_by_updated_at.remove(old_updated_at, contact)
         self.contacts_by_updated_at.add(contact.updated_at, contact)
 
-    def _sync_contact_tasks_for_archive_state(self, contact: Contact) -> None:
+    def _sync_contact_task_visibility(self, contact: Contact) -> None:
         for task in contact.tasks:
-            task.archived_contact_tag = _archived_contact_tag(contact)
+            task.visibility = _task_visibility(contact)
 
     def _reindex_next_task_date(self, contact: Contact, old_next_due: date | None) -> None:
         new_next_due = contact.next_task_due_at

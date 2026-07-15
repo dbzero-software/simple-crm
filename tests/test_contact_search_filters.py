@@ -4,12 +4,12 @@ import dbzero as db0
 
 from simple_crm.models import (
     CONTACT_TAG_PREFIX,
-    TASK_TAG_ARCHIVED_CONTACT,
     Contact,
     ContactStatus,
     TASK_FILTER_OPEN,
     TASK_FILTER_OVERDUE,
     Task,
+    TaskVisibility,
 )
 from simple_crm.seed import seed_sample_data
 
@@ -34,7 +34,7 @@ def test_search_filters_by_company_status_tag_and_text(crm):
     assert list(crm.search_contacts(tag="technical")) == [avery]
     assert list(crm.search_contacts(query="renewal")) == [jon]
     assert list(crm.search_contacts(query="northstar")) == [avery]
-    assert list(db0.find(Contact, "active_customer")) == [jon]
+    assert list(db0.find(Contact, ContactStatus.active_customer)) == [jon]
     assert list(db0.find(Contact, db0.as_tag(northstar))) == [avery]
     assert list(db0.find(f"{CONTACT_TAG_PREFIX}technical")) == [avery]
 
@@ -124,7 +124,7 @@ def test_task_state_filters_and_archived_default(crm):
     archived_task = crm.add_task(archived, "Old task", date.today() - timedelta(days=5))
     crm.archive_contact(archived)
 
-    assert list(db0.find(Task, TASK_TAG_ARCHIVED_CONTACT)) == [archived_task]
+    assert list(db0.find(Task, TaskVisibility.archived_contact)) == [archived_task]
     assert crm.counts()["open_tasks"] == 2
     assert active in crm.search_contacts(task_filter=TASK_FILTER_OPEN)
     assert active in crm.search_contacts(task_filter=TASK_FILTER_OVERDUE)

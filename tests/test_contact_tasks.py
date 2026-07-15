@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 import dbzero as db0
 
-from simple_crm.models import ContactStatus, TASK_FILTER_OPEN, TASK_FILTER_OVERDUE, TASK_TAG_COMPLETED, TASK_TAG_OPEN, Task
+from simple_crm.models import ContactStatus, TASK_FILTER_OPEN, TASK_FILTER_OVERDUE, Task, TaskState
 
 
 def test_follow_up_loop_updates_contact_and_metrics(crm):
@@ -23,7 +23,7 @@ def test_follow_up_loop_updates_contact_and_metrics(crm):
     assert contact.last_touch_at == note.created_at
     assert task.description == "Share pricing options and timeline."
     assert task.contact == contact
-    assert list(db0.find(Task, TASK_TAG_OPEN, db0.as_tag(contact))) == [task]
+    assert list(db0.find(Task, TaskState.open, db0.as_tag(contact))) == [task]
     assert contact.next_task_due_at == due_date
     assert contact.open_task_count == 1
     assert crm.counts()["open_tasks"] == 1
@@ -33,8 +33,8 @@ def test_follow_up_loop_updates_contact_and_metrics(crm):
 
     assert task.completed
     assert task.completed_at is not None
-    assert list(db0.find(Task, TASK_TAG_OPEN, db0.as_tag(contact))) == []
-    assert list(db0.find(Task, TASK_TAG_COMPLETED, db0.as_tag(contact))) == [task]
+    assert list(db0.find(Task, TaskState.open, db0.as_tag(contact))) == []
+    assert list(db0.find(Task, TaskState.completed, db0.as_tag(contact))) == [task]
     assert contact.next_task_due_at is None
     assert contact.open_task_count == 0
     assert crm.counts()["open_tasks"] == 0
