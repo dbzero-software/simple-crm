@@ -5,6 +5,7 @@ import dbzero as db0
 from simple_crm.models import (
     CONTACT_TAG_PREFIX,
     TASK_TAG_ARCHIVED_CONTACT,
+    Contact,
     ContactStatus,
     TASK_FILTER_OPEN,
     TASK_FILTER_OVERDUE,
@@ -33,8 +34,8 @@ def test_search_filters_by_company_status_tag_and_text(crm):
     assert list(crm.search_contacts(tag="technical")) == [avery]
     assert list(crm.search_contacts(query="renewal")) == [jon]
     assert list(crm.search_contacts(query="northstar")) == [avery]
-    assert list(db0.find(ContactStatus.active_customer)) == [jon]
-    assert list(db0.find(db0.as_tag(northstar))) == [avery]
+    assert list(db0.find(Contact, "active_customer")) == [jon]
+    assert list(db0.find(Contact, db0.as_tag(northstar))) == [avery]
     assert list(db0.find(f"{CONTACT_TAG_PREFIX}technical")) == [avery]
 
 

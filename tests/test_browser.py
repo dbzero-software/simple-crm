@@ -73,11 +73,11 @@ def test_browser_follow_up_workflow(tmp_path):
 
             page.get_by_label("Task title").fill("Browser follow-up")
             page.get_by_label("Task description").fill("Confirm the browser-created follow-up details.")
-            page.get_by_label("Due date").fill("2026-06-15")
+            page.get_by_label("Due date").fill("2026-08-15")
             page.get_by_role("button", name="Add task").click()
             expect(page.get_by_text("Browser follow-up")).to_be_visible()
             expect(page.get_by_text("Confirm the browser-created follow-up details.")).to_be_visible()
-            expect(page.get_by_text("Open · Due: 2026-06-15")).to_be_visible()
+            expect(page.get_by_text("Open · Due: 2026-08-15")).to_be_visible()
             page.get_by_role("button", name="Mark done").last.click()
             expect(page.get_by_role("button", name="Reopen")).to_be_visible()
             page.get_by_role("button", name="Reopen").last.click()
